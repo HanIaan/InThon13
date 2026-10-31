@@ -227,15 +227,23 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, s
     outline.current = null;
     if (!activeHome) return;
     const { kakao, map } = current;
-    outline.current = new kakao.maps.Polygon({
-      map,
-      path: activeHome.ring.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng)),
-      strokeWeight: 3,
-      strokeColor: "#101418",
-      fillColor: "#101418",
-      fillOpacity: 0.55,
-      zIndex: 3,
-    });
+    if (activeHome.ring.length) {
+      outline.current = new kakao.maps.Polygon({
+        map,
+        path: activeHome.ring.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng)),
+        strokeWeight: 3,
+        strokeColor: "#101418",
+        fillColor: "#101418",
+        fillOpacity: 0.55,
+        zIndex: 3,
+      });
+      return;
+    }
+    // 윤곽이 없는 곳은 점으로만 표시한다.
+    const node = document.createElement("div");
+    node.className = "map-dot";
+    const { lat, lng } = activeHome.mark ?? activeHome;
+    outline.current = new kakao.maps.CustomOverlay({ map, position: new kakao.maps.LatLng(lat, lng), content: node, xAnchor: 0, yAnchor: 0, zIndex: 3 });
   };
 
   useEffect(() => {

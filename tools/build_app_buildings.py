@@ -2,8 +2,9 @@
 
 사용법: python3 tools/build_app_buildings.py <shp> <dbf> public/data/buildings
 출처: 국토교통부 GIS건물통합정보(AL_D010, 2026-10-09), CC BY
-타일 한 줄: [층수, 높이m, 고리] 또는 주거는 [층수, 높이m, 고리, 유형, 이름, 주소]
-층수 0은 원본에 층수가 없다는 뜻이고, 고리는 1e-5도 단위 정수 차이값이다.
+타일 한 줄: [층수, 높이m, 고리, 유형, 이름, 주소, PNU]
+층수 0은 원본에 층수가 없다는 뜻이고, 유형은 0 기타, 1 단독, 2 공동이며, 고리는 1e-6도 단위 정수 차이값이다.
+원본 기록과 외곽선을 고치지 않고 그대로 옮긴다. 구멍만 제외한다.
 """
 import json
 import math
@@ -14,7 +15,8 @@ from collections import defaultdict
 
 ORIGIN_LNG, ORIGIN_LAT = 126.76, 37.41
 STEP_LNG, STEP_LAT = 0.0057, 0.0045
-E5 = 100000
+SCALE = 1000000
+SEOUL = (126.7, 37.38, 127.3, 37.75)
 
 # EPSG:5186 (GRS80, 중부원점 38N 127E, FE 200000, FN 600000)
 A = 6378137.0
@@ -80,9 +82,7 @@ def read_fields(dbf):
     return count, header, size, fields
 
 
-def main(shp_path, dbf_path, out):
-    os.makedirs(out, exist_ok=True)
-    tiles = defaultdict(list)
+def read_records(shp_path, dbf_path):
     dbf = open(dbf_path, "rb")
     count, header, size, fields = read_fields(dbf)
     text = lambda row, name: row[fields[name][0] : fields[name][0] + fields[name][1]].split(b"\0")[0].decode("cp949", "ignore").strip()
@@ -91,10 +91,8 @@ def main(shp_path, dbf_path, out):
         value = text(row, name)
         return 0.0 if not value or value.startswith("*") else float(value)
 
-
     shp = open(shp_path, "rb")
     shp.seek(100)
-    homes = 0
     for index in range(count):
         head = shp.read(8)
         if len(head) < 8:
@@ -111,40 +109,51 @@ def main(shp_path, dbf_path, out):
         floors = int(number(row, "A26"))
         height = number(row, "A16")
         use = text(row, "A9")
-        kind = 1 if use == "단독주택" else 2 if use == "공동주택" else 0
-        name = " ".join(v for v in (text(row, "A24"), text(row, "A25")) if v)
-        address = f"{text(row, 'A4')} {text(row, 'A5')}".strip()
-        kept_height = round(height) if height > 0 and (not floors or 1.5 <= height / floors <= 10) else 0
         for p in range(parts_n):
             ring = [(coords[2 * i], coords[2 * i + 1]) for i in range(parts[p], parts[p + 1])]
             area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(ring, ring[1:]))
-            if area >= 0:
+            if area >= 0 or len(ring) < 4:
                 continue  # ESRI 규칙: 반시계는 구멍
-            points = [to_lnglat(x, y) for x, y in ring]
-            flat, last = [], (0, 0)
-            for lng, lat in points:
-                now = (round(lat * E5), round(lng * E5))
-                if now == last:
-                    continue
-                flat += [now[0] - last[0], now[1] - last[1]]
-                last = now
-            if len(flat) < 8:
+            yield {
+                "lot": text(row, "A2"),
+                "ring": ring,
+                "floors": floors,
+                "height": round(height) if height > 0 and (not floors or 1.5 <= height / floors <= 10) else 0,
+                "kind": 1 if use == "단독주택" else 2 if use == "공동주택" else 0,
+                "name": " ".join(v for v in (text(row, "A24"), text(row, "A25")) if v),
+                "address": f"{text(row, 'A4')} {text(row, 'A5')}".strip(),
+            }
+
+
+def main(shp_path, dbf_path, out):
+    os.makedirs(out, exist_ok=True)
+    tiles = defaultdict(list)
+    source = 0
+    for item in read_records(shp_path, dbf_path):
+        source += 1
+        points = [to_lnglat(x, y) for x, y in item["ring"]]
+        flat, last = [], (0, 0)
+        for lng, lat in points:
+            now = (round(lat * SCALE), round(lng * SCALE))
+            if now == last:
                 continue
-            lng = sum(c[0] for c in points) / len(points)
-            lat = sum(c[1] for c in points) / len(points)
-            key = f"{math.floor((lng - ORIGIN_LNG) / STEP_LNG)}_{math.floor((lat - ORIGIN_LAT) / STEP_LAT)}"
-            item = [floors, kept_height, flat]
-            if kind:
-                item += [kind, name, address]
-                homes += 1
-            tiles[key].append(item)
+            flat += [now[0] - last[0], now[1] - last[1]]
+            last = now
+        if len(flat) < 8:
+            continue
+        lng = sum(c[0] for c in points) / len(points)
+        lat = sum(c[1] for c in points) / len(points)
+        if not (SEOUL[0] < lng < SEOUL[2] and SEOUL[1] < lat < SEOUL[3]):
+            continue  # 원본에 좌표가 잘못된 기록이 있다.
+        key = f"{math.floor((lng - ORIGIN_LNG) / STEP_LNG)}_{math.floor((lat - ORIGIN_LAT) / STEP_LAT)}"
+        tiles[key].append([item["floors"], item["height"], flat, item["kind"], item["name"], item["address"], item["lot"]])
     total = 0
     for key, items in tiles.items():
         body = json.dumps(items, ensure_ascii=False, separators=(",", ":"))
         total += len(body.encode())
         with open(os.path.join(out, f"{key}.json"), "w", encoding="utf8") as file:
             file.write(body)
-    print({"tiles": len(tiles), "buildings": sum(map(len, tiles.values())), "homes": homes, "MB": round(total / 1e6, 1)})
+    print({"tiles": len(tiles), "source": source, "buildings": sum(map(len, tiles.values())), "MB": round(total / 1e6, 1)})
 
 
 if __name__ == "__main__":

@@ -2,11 +2,12 @@ import { getPosition, getTimes } from "suncalc";
 import seedRoads from "./roads.json";
 import seedSensors from "./sensors.json";
 import type { Sensitivity } from "./rest";
+import { groundAt } from "./terrain";
 
 // 기획서 6-2~6-4장의 주거 계산이다. 층·창문 보정값은 기획서의 초기 추정치를 따른다.
 export type Direction = "north" | "east" | "south" | "west";
 export type HomeInput = { floor: number; direction: Direction };
-export type Building = { levels: number | null; height?: number; ring: [number, number][] };
+export type Building = { levels: number | null; height?: number; ring: [number, number][]; ground?: number };
 export type Sunlight = { minutes: number; start: string; end: string; slots: boolean[] };
 export type SunReport = { winter: Sunlight; missingLevels: number };
 
@@ -20,6 +21,9 @@ export const DIRECTIONS: { id: Direction; label: string; degree: number }[] = [
 const FLOOR_METERS = 3;
 const UNKNOWN_LEVELS = 3;
 const SHADE_RANGE_M = 200;
+const HILL_START_M = 120;
+const HILL_RANGE_M = 3000;
+const HILL_STEP_M = 60;
 const STEP_MINUTES = 10;
 const STREET_LIGHT_SHARE = 0.45;
 const WINTER_SOLSTICE = "2026-12-21";
@@ -145,7 +149,16 @@ function timeLabel(minutes: number) {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
-function sunlightOn(date: string, window: { lat: number; lng: number; height: number }, direction: Direction, around: { height: number; ring: { x: number; y: number }[] }[]): Sunlight {
+// 주변 건물 밖의 언덕과 산은 태양 방향으로 지형을 따라가며 확인한다.
+function hillBlocks(window: { lat: number; lng: number }, eye: number, dx: number, dy: number, rise: number) {
+  const metersPerLng = 111000 * Math.cos((window.lat * Math.PI) / 180);
+  for (let distance = HILL_START_M; distance <= HILL_RANGE_M; distance += HILL_STEP_M) {
+    if (groundAt(window.lat + (dy * distance) / 111000, window.lng + (dx * distance) / metersPerLng) > eye + distance * rise) return true;
+  }
+  return false;
+}
+
+function sunlightOn(date: string, window: { lat: number; lng: number; height: number; base: number }, direction: Direction, around: { height: number; ring: { x: number; y: number }[] }[]): Sunlight {
   const facing = degreeOf(direction);
   const slots: boolean[] = [];
   for (let minutes = 0; minutes < 1440; minutes += STEP_MINUTES) {
@@ -162,7 +175,7 @@ function sunlightOn(date: string, window: { lat: number; lng: number; height: nu
       lit = !around.some((b) => {
         const distance = rayDistance(b.ring, dx, dy);
         return distance <= SHADE_RANGE_M && b.height > window.height + distance * rise;
-      });
+      }) && !hillBlocks(window, window.base + window.height, dx, dy, rise);
     }
     slots.push(lit);
   }
@@ -177,12 +190,13 @@ function sunlightOn(date: string, window: { lat: number; lng: number; height: nu
 
 // 기획서 6-3: 창문에서 태양 쪽으로 선을 그어 주변 건물에 가리는지 10분 단위로 확인한다.
 export function sunReport(home: { lat: number; lng: number; ring: [number, number][] }, input: HomeInput, buildings: Building[], date: string = WINTER_SOLSTICE): SunReport {
+  const base = groundAt(home.lat, home.lng);
   const around = buildings
-    .map((b) => ({ levels: b.levels, height: b.height, ring: b.ring.map(([lat, lng]) => toMeters(home, lat, lng)) }))
+    .map((b) => ({ levels: b.levels, height: b.height, ground: b.ground ?? base, ring: b.ring.map(([lat, lng]) => toMeters(home, lat, lng)) }))
     .filter((b) => b.ring.some((p) => Math.hypot(p.x, p.y) < SHADE_RANGE_M + 40))
     .filter((b) => !containsOrigin(b.ring))
-    .map((b) => ({ height: b.height ?? (b.levels ?? UNKNOWN_LEVELS) * FLOOR_METERS, ring: b.ring, missing: b.levels === null }));
-  const window = { lat: home.lat, lng: home.lng, height: (input.floor - 1) * FLOOR_METERS + 1.5 };
+    .map((b) => ({ height: (b.height ?? (b.levels ?? UNKNOWN_LEVELS) * FLOOR_METERS) + b.ground - base, ring: b.ring, missing: b.levels === null }));
+  const window = { lat: home.lat, lng: home.lng, height: (input.floor - 1) * FLOOR_METERS + 1.5, base };
   return {
     winter: sunlightOn(date, window, input.direction, around),
     missingLevels: around.length ? Math.round((around.filter((b) => b.missing).length / around.length) * 100) : 0,

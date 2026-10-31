@@ -14,6 +14,7 @@ import { DirectionDial, FloorInput, ModeSwitch } from "@/components/HomeViews";
 import type { Cell, Home } from "@/lib/data";
 import { DIRECTIONS, formatDuration, roadsAround, sunReport, type Building, type HomeInput } from "@/lib/home-report";
 import { level, slotOf } from "@/lib/rest";
+import { groundAt } from "@/lib/terrain";
 
 type ViewMode = "window" | "orbit" | "top";
 
@@ -117,6 +118,8 @@ type Scene = {
   dispose: () => void;
 };
 
+const GROUND_M = 9000;
+const GROUND_CELLS = 300;
 const MAX_CARS = 220;
 const MAX_PEOPLE = 420;
 const MAX_SIGNS = 240;
@@ -138,6 +141,9 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const metersPerLng = 111000 * Math.cos((home.lat * Math.PI) / 180);
   const toLocal = (lat: number, lng: number) => [(lng - home.lng) * metersPerLng, -(lat - home.lat) * metersPerLat];
   const ownRing = home.ring.map(([lat, lng]) => toLocal(lat, lng));
+  const homeGround = groundAt(home.lat, home.lng);
+  const heightAt = (x: number, z: number) => groundAt(home.lat - z / metersPerLat, home.lng + x / metersPerLng) - homeGround;
+  const lowestAt = (points: number[][]) => Math.min(0, ...points.map(([x, z]) => heightAt(x, z)));
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -173,8 +179,12 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   sun.shadow.bias = -0.0005;
   scene.add(ambient, sun, sun.target);
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), new THREE.MeshStandardMaterial({ color: 0x77786f, roughness: 0.96 }));
-  ground.rotation.x = -Math.PI / 2;
+  const terrain = new THREE.PlaneGeometry(GROUND_M, GROUND_M, GROUND_CELLS, GROUND_CELLS);
+  terrain.rotateX(-Math.PI / 2);
+  const surface = terrain.getAttribute("position");
+  for (let i = 0; i < surface.count; i++) surface.setY(i, heightAt(surface.getX(i), surface.getZ(i)));
+  terrain.computeVertexNormals();
+  const ground = new THREE.Mesh(terrain, new THREE.MeshStandardMaterial({ color: 0x77786f, roughness: 0.96 }));
   ground.receiveShadow = true;
   scene.add(ground);
 
@@ -193,8 +203,12 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
     const [cx, cz] = [points.reduce((sum, p) => sum + p[0], 0) / points.length, points.reduce((sum, p) => sum + p[1], 0) / points.length];
     if (Math.hypot(cx, cz) > RANGE_M || insideRing(0, 0, points)) continue;
     const shape = new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, -z)));
-    const geometry = new THREE.ExtrudeGeometry(shape, { depth: building.height ?? (building.levels ?? UNKNOWN_FLOORS) * FLOOR_M, bevelEnabled: false });
+    // 경사지에서도 뜨지 않게 가장 낮은 땅에서 세우고, 지붕은 건물 중심 땅 높이에 맞춘다.
+    const base = lowestAt(points);
+    const roofAt = heightAt(cx, cz) + (building.height ?? (building.levels ?? UNKNOWN_FLOORS) * FLOOR_M);
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.max(1, roofAt - base), bevelEnabled: false });
     geometry.rotateX(-Math.PI / 2);
+    geometry.translate(0, base, 0);
     const uv = geometry.getAttribute("uv");
     const position = geometry.getAttribute("position");
     const normal = geometry.getAttribute("normal");
@@ -225,17 +239,20 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   addMerged(roofs, roof);
 
   // 내 건물은 둘러보기에서만 주황색으로 보여 준다. 창문 시점에서는 내 벽이 시야를 막지 않게 숨긴다.
+  const ownBase = lowestAt(ownRing);
   const ownMesh = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(new THREE.Shape(ownRing.map(([x, z]) => new THREE.Vector2(x, -z))), { depth: (Number(home.levels) || UNKNOWN_FLOORS) * FLOOR_M, bevelEnabled: false }),
+    // 윤곽이 없는 위치는 건물을 지어내지 않는다.
+    ownRing.length ? new THREE.ExtrudeGeometry(new THREE.Shape(ownRing.map(([x, z]) => new THREE.Vector2(x, -z))), { depth: (Number(home.levels) || UNKNOWN_FLOORS) * FLOOR_M - ownBase, bevelEnabled: false }) : new THREE.BufferGeometry(),
     new THREE.MeshStandardMaterial({ color: 0xf0a13c, roughness: 0.6 }),
   );
   ownMesh.geometry.rotateX(-Math.PI / 2);
+  ownMesh.geometry.translate(0, ownBase, 0);
   ownMesh.castShadow = ownMesh.receiveShadow = true;
   scene.add(ownMesh);
 
   // 실제 도로를 따라 자동차, 사람, 간판, 가로등 자리를 만든다.
   const random = seeded(101);
-  const lanes: { x: number; z: number; angle: number; distance: number }[] = [];
+  const lanes: { x: number; y: number; z: number; angle: number; distance: number }[] = [];
   for (const line of roadsAround(home.lat, home.lng, RANGE_M)) {
     const points = line.map(([lat, lng]) => toLocal(lat, lng));
     for (let i = 1; i < points.length; i++) {
@@ -244,7 +261,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
       const length = Math.hypot(bx - ax, bz - az);
       for (let t = 0; t < length; t += 12) {
         const [x, z] = [ax + ((bx - ax) * t) / length, az + ((bz - az) * t) / length];
-        lanes.push({ x, z, angle: Math.atan2(bx - ax, bz - az), distance: Math.hypot(x, z) });
+        lanes.push({ x, y: heightAt(x, z), z, angle: Math.atan2(bx - ax, bz - az), distance: Math.hypot(x, z) });
       }
     }
   }
@@ -255,7 +272,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const cars = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 1.4, 4.4), new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.4 }), MAX_CARS);
   spread(MAX_CARS, (lane, i) => {
     const side = random() < 0.5 ? -3 : 3;
-    dummy.position.set(lane.x + Math.cos(lane.angle) * side, 0.9, lane.z - Math.sin(lane.angle) * side);
+    dummy.position.set(lane.x + Math.cos(lane.angle) * side, lane.y + 0.9, lane.z - Math.sin(lane.angle) * side);
     dummy.rotation.set(0, lane.angle, 0);
     dummy.scale.setScalar(1);
     dummy.updateMatrix();
@@ -266,7 +283,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const people = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.26, 1.1, 2, 6), new THREE.MeshStandardMaterial({ color: 0x2c2f35, roughness: 0.8 }), MAX_PEOPLE);
   spread(MAX_PEOPLE, (lane, i) => {
     const side = (random() < 0.5 ? -1 : 1) * (8 + random() * 3);
-    dummy.position.set(lane.x + Math.cos(lane.angle) * side + random() * 6, 0.85, lane.z - Math.sin(lane.angle) * side + random() * 6);
+    dummy.position.set(lane.x + Math.cos(lane.angle) * side + random() * 6, lane.y + 0.85, lane.z - Math.sin(lane.angle) * side + random() * 6);
     dummy.rotation.set(0, 0, 0);
     dummy.updateMatrix();
     people.setMatrixAt(i, dummy.matrix);
@@ -276,7 +293,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const signs = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.2, 1.1), signMaterial, MAX_SIGNS);
   spread(MAX_SIGNS, (lane, i) => {
     const side = (random() < 0.5 ? -1 : 1) * 12;
-    dummy.position.set(lane.x + Math.cos(lane.angle) * side, 3.2 + random() * 5, lane.z - Math.sin(lane.angle) * side);
+    dummy.position.set(lane.x + Math.cos(lane.angle) * side, lane.y + 3.2 + random() * 5, lane.z - Math.sin(lane.angle) * side);
     dummy.rotation.set(0, lane.angle, 0);
     dummy.updateMatrix();
     signs.setMatrixAt(i, dummy.matrix);
@@ -284,7 +301,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   });
   const lampPositions: number[] = [];
   lanes.filter((_, i) => i % 3 === 0).slice(0, MAX_LAMPS).forEach((lane) => {
-    lampPositions.push(lane.x + Math.cos(lane.angle) * 8, 8, lane.z - Math.sin(lane.angle) * 8);
+    lampPositions.push(lane.x + Math.cos(lane.angle) * 8, lane.y + 8, lane.z - Math.sin(lane.angle) * 8);
   });
   const lampGeometry = new THREE.BufferGeometry();
   lampGeometry.setAttribute("position", new THREE.Float32BufferAttribute(lampPositions, 3));

@@ -32,7 +32,6 @@ import {
 } from "@/lib/api";
 import {
   cellForHome,
-  homeAtPoint,
   nearestHome,
   nearestToPoint,
   recommendSpots,
@@ -279,7 +278,7 @@ export default function Home() {
     return () => observer.disconnect();
   });
 
-  function pick(place: SearchPlace) {
+  function pick(place: Omit<SearchPlace, "name"> & { name?: string }) {
     if (isHome) {
       const request = ++homeSearch.current;
       buildingAt(place).then((found) => {
@@ -294,9 +293,8 @@ export default function Home() {
   function chooseOnMap(next: { lat: number; lng: number }) {
     if (up) return;
     if (isHome) {
-      const found = homeAtPoint(homes, next.lat, next.lng);
-      if (found) chooseHome(found);
-      else setToast(mapView && mapView.zoom < HOME_ZOOM ? "지도를 확대해 건물을 골라 주세요" : "주거 시설만 선택할 수 있어요");
+      if (mapView && mapView.zoom < HOME_ZOOM) setToast("지도를 확대해 건물을 골라 주세요");
+      else pick(next);
       return;
     }
     if (!nearestToPoint(overview, next.lat, next.lng, 0.6)) {

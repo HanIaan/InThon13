@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { distanceMeters, inside, SEED_CELLS, SEED_HOMES, SEED_SPOTS, type Cell, type Home, type Spot } from "./data";
 import { addRoads, setSensors, type Building } from "./home-report";
+import { KAKAO_KEY, lotAt } from "./kakao";
 import type { Burden, Slot } from "./rest";
+import { groundAt, loadTerrain } from "./terrain";
 
 // 서울을 약 4.4km 구역으로 나눠, 지도에 보이는 구역만 불러온다. scripts/build-seoul-grid.mjs와 값을 맞춘다.
 const TILE = { lat: 0.04, lng: 0.05, south: 37.42, west: 126.76 };
@@ -9,9 +11,8 @@ const SLOTS: Slot[] = ["day", "evening", "night", "dawn"];
 
 // 건물 타일은 약 500m 단위다. tools/build_app_buildings.py와 값을 맞춘다.
 const BUILDING_TILE = { lat: 0.0045, lng: 0.0057, south: 37.41, west: 126.76 };
-const HOME_TYPE: Record<number, string> = { 1: "단독주택", 2: "공동주택" };
-const BUILDING_SEARCH_M = 80;
-const SPOT_RING_DEG = 0.00005;
+const HOME_TYPE: Record<number, string> = { 0: "건물", 1: "단독주택", 2: "공동주택" };
+const SAME_LOT_M = 15;
 
 export const SEOUL = { south: 37.42, north: 37.71, west: 126.75, east: 127.2 };
 export const DETAIL_ZOOM = 13;
@@ -22,7 +23,7 @@ export const OVERVIEW_SIZE = { lat: 0.0045, lng: 0.00567 };
 export type MapView = { south: number; north: number; west: number; east: number; zoom: number };
 type Row = (string | number | null)[];
 type OsmTile = { spots: Spot[]; roads: number[][] };
-type BuildingRow = [number, number, number[], number?, string?, string?];
+type BuildingRow = [number, number, number[], number, string, string, string];
 type Point = { lat: number; lng: number };
 
 function tilesIn(view: Omit<MapView, "zoom">, tile: typeof TILE = TILE) {
@@ -46,7 +47,7 @@ function decodeRing(flat: number[]) {
   for (let i = 0; i < flat.length; i += 2) {
     lat += flat[i];
     lng += flat[i + 1];
-    ring.push([lat / 1e5, lng / 1e5]);
+    ring.push([lat / 1e6, lng / 1e6]);
   }
   return ring;
 }
@@ -80,60 +81,42 @@ const loadBuildingRows = (key: string) => load<BuildingRow[]>(`/data/buildings/$
 
 function decodeHomes(key: string, rows: BuildingRow[]) {
   const list: Home[] = [];
-  rows.forEach(([floors, , flat, kind, name, address], i) => {
-    if (!kind) return;
+  rows.forEach(([floors, , flat, kind, name, address, pnu], i) => {
     const ring = decodeRing(flat);
     const lat = ring.reduce((sum, p) => sum + p[0], 0) / ring.length;
     const lng = ring.reduce((sum, p) => sum + p[1], 0) / ring.length;
-    list.push({ id: `b${key}_${i}`, name: name || undefined, type: HOME_TYPE[kind], levels: floors ? String(floors) : undefined, address, ring, lat, lng });
+    list.push({ id: `b${key}_${i}`, name: name || undefined, type: HOME_TYPE[kind], levels: floors ? String(floors) : undefined, address, pnu, ring, lat, lng });
   });
   return list;
 }
 
-// 검색한 좌표의 건물을 찾는다. 불러온 구역에 좌우되지 않도록 항상 주변 타일을 직접 읽는다.
+// 좌표가 있는 필지(PNU)의 건물 윤곽만 연결한다. 맞는 윤곽이 없으면 도형 없이 위치만 돌려준다.
 export async function buildingAt(place: Point & { name?: string; detail?: string; building?: string }): Promise<Home> {
+  const lot = KAKAO_KEY ? await lotAt(place.lat, place.lng).catch(() => null) : null;
   const keys = tilesIn(around(place, 0.002), BUILDING_TILE);
   const tiles = await Promise.all(keys.map(async (key) => ({ key, rows: await loadBuildingRows(key) })));
-  const list = tiles.flatMap(({ key, rows }) =>
-    rows.map(([floors, , flat, kind, name, address], i) => {
-      const ring = decodeRing(flat);
-      return {
-        ring,
-        lat: ring.reduce((sum, p) => sum + p[0], 0) / ring.length,
-        lng: ring.reduce((sum, p) => sum + p[1], 0) / ring.length,
-        id: `b${key}_${i}`,
-        name: name || undefined,
-        type: kind ? HOME_TYPE[kind] : "건물",
-        // 주거 건물 외에는 주소가 없어 같은 건물인지 알 수 없으므로 층수를 단정하지 않는다.
-        levels: kind && floors ? String(floors) : undefined,
-        address,
-      };
-    }),
-  );
+  const list = tiles.flatMap(({ key, rows }) => decodeHomes(key, rows));
+  const under = list.filter((home) => inside(place.lat, place.lng, home.ring));
   // 큰 건물은 중심이 멀리 있어서 윤곽 꼭짓점까지의 거리로 비교한다.
-  const distanceTo = (home: (typeof list)[number]) => Math.min(...home.ring.map(([lat, lng]) => distanceMeters({ lat, lng }, place)));
-  const nearest = list
-    .map((home) => ({ home, meters: distanceTo(home) }))
-    .filter(({ meters }) => meters <= BUILDING_SEARCH_M)
-    .sort((a, b) => a.meters - b.meters || a.home.id.localeCompare(b.home.id));
-  const found = list.find((home) => inside(place.lat, place.lng, home.ring)) ?? nearest[0]?.home;
-  if (found) return { ...found, name: found.name ?? place.building ?? (found.address ? undefined : place.name), address: found.address ?? place.detail ?? place.name };
-  // 건물 윤곽이 없는 곳도 찾은 위치 자체는 볼 수 있게 한다.
-  const [dLat, dLng] = [SPOT_RING_DEG, SPOT_RING_DEG];
-  return {
-    id: `p${place.lat},${place.lng}`,
-    name: place.building ?? place.name,
-    type: "위치",
-    address: place.detail ?? place.name,
-    lat: place.lat,
-    lng: place.lng,
-    ring: [[place.lat - dLat, place.lng - dLng], [place.lat - dLat, place.lng + dLng], [place.lat + dLat, place.lng + dLng], [place.lat + dLat, place.lng - dLng], [place.lat - dLat, place.lng - dLng]],
-  };
+  const distanceTo = (home: Home) => Math.min(...home.ring.map(([lat, lng]) => distanceMeters({ lat, lng }, place)));
+  const sameLot = lot?.pnu ? list.filter((home) => home.pnu === lot.pnu) : [];
+  const close = sameLot.filter((home) => distanceTo(home) <= SAME_LOT_M).sort((a, b) => distanceTo(a) - distanceTo(b) || a.id.localeCompare(b.id));
+  let found: Home | undefined = under.find((home) => sameLot.includes(home)) ?? close[0];
+  if (!lot?.pnu) found ??= under[0];
+  const mark = { lat: place.lat, lng: place.lng };
+  // 원본은 한 건물을 층수 있는 기록과 없는 기록으로 나누기도 해서, 같은 번지의 가까운 기록에서 층수를 찾는다.
+  if (found) return { ...found, mark, levels: found.levels ?? close.find((home) => home.levels)?.levels, name: place.building ?? lot?.building ?? found.name ?? (found.type === HOME_TYPE[0] ? place.name : undefined), address: place.detail ?? lot?.address ?? found.address };
+  const address = place.detail ?? lot?.address ?? place.name;
+  return { id: `p${place.lat},${place.lng}`, name: place.building ?? lot?.building ?? place.name ?? address, type: "위치", address, lat: place.lat, lng: place.lng, mark, ring: [] };
 }
 
 export async function loadBuildings(point: Point, margin = 0.006): Promise<Building[]> {
-  const lists = await Promise.all(tilesIn(around(point, margin), BUILDING_TILE).map(loadBuildingRows));
-  return lists.flat().map(([floors, height, flat]) => ({ levels: floors || null, height: height || undefined, ring: decodeRing(flat) }));
+  const [lists] = await Promise.all([Promise.all(tilesIn(around(point, margin), BUILDING_TILE).map(loadBuildingRows)), loadTerrain()]);
+  return lists.flat().map(([floors, height, flat]) => {
+    const ring = decodeRing(flat);
+    const ground = groundAt(ring.reduce((sum, p) => sum + p[0], 0) / ring.length, ring.reduce((sum, p) => sum + p[1], 0) / ring.length);
+    return { levels: floors || null, height: height || undefined, ring, ground };
+  });
 }
 
 // 지도 영역과 anchor 주변 구역을 불러와, 지금까지 받은 데이터를 합쳐 돌려준다.
