@@ -1,6 +1,10 @@
 export type Slot = "day" | "evening" | "night" | "dawn";
 export type Sense = "sound" | "light" | "crowd";
 export type Sensitivity = Record<Sense, number> & { sun: number };
+
+// 내 감각은 0~10으로 고른다. 점수 공식과 백엔드는 0~5 기준이라 절반으로 환산한다.
+export const SENSITIVITY_MAX = 10;
+export const SENSITIVITY_SCALE = 2;
 export type Burden = Record<Sense, number>;
 
 export const SLOTS: { id: Slot; label: string; hour: string }[] = [
@@ -46,7 +50,7 @@ const clamp = (v: number) => Math.max(0, Math.min(100, v));
 // 평균만 쓰면 한 감각이 심해도 가려지므로 가장 큰 부담을 함께 반영한다.
 export function restScore(burden: Burden, sensitivity: Sensitivity): number {
   const senses: Sense[] = ["sound", "light", "crowd"];
-  const weighted = senses.map((s) => clamp(burden[s] * (0.25 + sensitivity[s] * 0.3)));
+  const weighted = senses.map((s) => clamp(burden[s] * (0.25 + (sensitivity[s] / SENSITIVITY_SCALE) * 0.3)));
   const mean = weighted.reduce((a, b) => a + b, 0) / weighted.length;
   return Math.round(100 - clamp(mean * 0.55 + Math.max(...weighted) * 0.45));
 }

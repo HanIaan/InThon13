@@ -87,7 +87,7 @@ export function adjustedLight(light: number, input: HomeInput, lat: number, lng:
 }
 
 // 기획서 6-4의 소음 0.65, 빛 0.35 비중에 내 감각을 곱한다. 민감도 3이면 기획서 공식과 같다.
-const NEUTRAL_SENSITIVITY = 3;
+const NEUTRAL_SENSITIVITY = 6;
 
 export function sleepScore(noiseNight: number, light: number, sensitivity: Sensitivity) {
   const noiseLoad = 0.65 * noiseNight * (sensitivity.sound / NEUTRAL_SENSITIVITY);

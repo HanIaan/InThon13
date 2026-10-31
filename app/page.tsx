@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Dock, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
+import { Dock, LocateButton, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
 import { DirectionDial, FloorInput, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
 import { GlassSheets, MainSheet } from "@/components/Sheets";
@@ -82,10 +82,12 @@ const MAX_UI_SCALE = 1.6;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
 const DEFAULT_FLOOR = 3;
+const LOCATE_TIMEOUT_MS = 10000;
+const LOCATE_MAX_AGE_MS = 60000;
 
 export default function Home() {
   const [hour, setHour] = useState(23);
-  const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 4, light: 2, crowd: 3, sun: 3 });
+  const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 8, light: 4, crowd: 6, sun: 6 });
   const [point, setPoint] = useState(START_POINT);
   const [picked, setPicked] = useState(false);
   const [activeSpot, setActiveSpot] = useState<string | null>(null);
@@ -102,6 +104,8 @@ export default function Home() {
   const [area, setArea] = useState<GridResponse | null>(null);
   const [notice, setNotice] = useState("");
   const [toast, setToast] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [myPoint, setMyPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [applied, setApplied] = useState(sensitivity);
   const [lookup, setLookup] = useState<{ key: string; address?: string; name?: string } | null>(null);
   const [view, setView] = useState<"day" | "night">("day");
@@ -327,6 +331,31 @@ export default function Home() {
     }
   }
 
+  function locate() {
+    if (!navigator.geolocation) {
+      setToast("이 브라우저는 위치 찾기를 지원하지 않아요");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLocating(false);
+        const here = { lat: coords.latitude, lng: coords.longitude };
+        if (here.lat < SEOUL.south || here.lat > SEOUL.north || here.lng < SEOUL.west || here.lng > SEOUL.east) {
+          setToast("서울 안에서만 볼 수 있어요");
+          return;
+        }
+        setMyPoint(here);
+        pick(here);
+      },
+      (error) => {
+        setLocating(false);
+        setToast(error.code === error.PERMISSION_DENIED ? "브라우저에서 위치 권한을 허용해 주세요" : "내 위치를 찾지 못했어요");
+      },
+      { enableHighAccuracy: true, timeout: LOCATE_TIMEOUT_MS, maximumAge: LOCATE_MAX_AGE_MS },
+    );
+  }
+
   function chooseOnMap(next: { lat: number; lng: number }) {
     if (isHome) {
       if (mapView && mapView.zoom < HOME_ZOOM) setToast("지도를 확대해 건물을 골라 주세요");
@@ -480,6 +509,7 @@ export default function Home() {
           scores={scores}
           features={live ? grid!.features : null}
           pinPoint={isHome ? null : point}
+          myPoint={myPoint}
           focusPoint={target ? { lat: target.lat, lng: target.lng } : null}
           spots={spots}
           activeSpot={active?.spot.id ?? null}
@@ -493,6 +523,7 @@ export default function Home() {
       </div>
 
       <TopSwitch isHome={isHome} onChange={setTab} />
+      {!up && <LocateButton busy={locating} onClick={locate} />}
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
       <TuneCard open={tuneOpen} hidden={up} isHome={isHome} onToggle={() => setTuneOpen(!tuneOpen)}>
