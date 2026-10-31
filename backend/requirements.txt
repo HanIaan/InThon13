@@ -8,5 +8,6 @@ httpx>=0.27
 pandas>=2.2
 numpy>=1.26
 shapely>=2.0
+h5py>=3.10  # NASA Black Marble HDF5
 # database (optional; mock mode runs without it)
 psycopg[binary]>=3.1
