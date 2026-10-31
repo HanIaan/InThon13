@@ -386,10 +386,11 @@ export default function Home() {
     }
     if (!nearestToPoint(overview, next.lat, next.lng, 0.6)) {
       setToast("서울 안에서만 볼 수 있어요");
-      return;
+      return false;
     }
     setPoint(next);
     setPicked(true);
+    return true;
   }
 
   function chooseSpot(id: string) {

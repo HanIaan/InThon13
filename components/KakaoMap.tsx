@@ -28,7 +28,7 @@ type Props = {
   homes: Home[] | null;
   activeHome: Home | null;
   onSpot: (id: string) => void;
-  onPoint: (point: Point) => void;
+  onPoint: (point: Point) => boolean | void;
   onHome?: (home: Home) => void;
   onView: (view: MapView) => void;
 };
@@ -144,13 +144,13 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
   const host = useRef<HTMLDivElement>(null);
   const kit = useRef<{ kakao: any; map: any; heat: any; buildings: any } | null>(null);
   const pins = useRef<any[]>([]);
-  const dot = useRef<any>(null);
+  const centerPin = useRef<HTMLDivElement>(null);
   const me = useRef<any>(null);
   const zoomControl = useRef<any>(null);
   const outline = useRef<any>(null);
   const placed = useRef("");
-  const latest = useRef({ onPoint, onHome, onView, onSpot, homes });
-  latest.current = { onPoint, onHome, onView, onSpot, homes };
+  const latest = useRef({ onPoint, onHome, onView, onSpot, homes, focusPoint });
+  latest.current = { onPoint, onHome, onView, onSpot, homes, focusPoint };
   const hover = useRef<any>(null);
   const view = useRef<MapView | null>(null);
   const redraw = useRef<() => void>(() => {});
@@ -170,27 +170,51 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
     }
     place();
     pin();
-    mark();
     showMe();
     trace();
   };
   redraw.current = draw;
 
+  // 대상이 놓이는 화면 위치다. 고정 핀도 이 자리에 선다.
+  const focusSpot = () => {
+    const { clientWidth, clientHeight } = host.current!;
+    const shift = openingShift(kit.current!.map, host.current!);
+    return { x: clientWidth / 2 + shift.x, y: clientHeight / 2 + shift.y };
+  };
+
+  const centerOn = (target: Point, smooth = false) => {
+    const { kakao, map } = kit.current!;
+    const spot = focusSpot();
+    const projection = map.getProjection();
+    const [width, height] = [host.current!.clientWidth / 2, host.current!.clientHeight / 2];
+    const middle = projection.coordsFromContainerPoint(new kakao.maps.Point(width, height));
+    const moved = projection.coordsFromContainerPoint(new kakao.maps.Point(2 * width - spot.x, 2 * height - spot.y));
+    const center = new kakao.maps.LatLng(target.lat + moved.getLat() - middle.getLat(), target.lng + moved.getLng() - middle.getLng());
+    if (smooth) map.panTo(center);
+    else map.setCenter(center);
+  };
+
+  const standPin = () => {
+    if (!centerPin.current || !host.current || !kit.current) return;
+    const { x, y } = focusSpot();
+    centerPin.current.style.left = `${x}px`;
+    centerPin.current.style.top = `${y}px`;
+  };
+
   const place = () => {
     const { current } = kit;
     if (!current || !focusPoint || !host.current) return;
-    const { kakao, map } = current;
+    standPin();
+    const { map } = current;
     const key = `${focusPoint.lat},${focusPoint.lng},${Boolean(homes)}`;
     if (placed.current === key) return;
+    const first = !placed.current.endsWith("false");
     placed.current = key;
     const level = homes ? HOME_LEVEL : REST_LEVEL;
-    if (map.getLevel() > level) map.setLevel(level);
-    const shift = openingShift(map, host.current);
-    const projection = map.getProjection();
-    const [width, height] = [host.current.clientWidth / 2, host.current.clientHeight / 2];
-    const middle = projection.coordsFromContainerPoint(new kakao.maps.Point(width, height));
-    const moved = projection.coordsFromContainerPoint(new kakao.maps.Point(width - shift.x, height - shift.y));
-    map.setCenter(new kakao.maps.LatLng(focusPoint.lat + moved.getLat() - middle.getLat(), focusPoint.lng + moved.getLng() - middle.getLng()));
+    const zoomed = map.getLevel() > level;
+    if (zoomed) map.setLevel(level);
+    // 휴식에서는 핀이 제자리에 있고 지도가 밀려 오게 한다.
+    centerOn(focusPoint, !homes && !first && !zoomed);
   };
 
   const pin = () => {
@@ -222,17 +246,6 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
     const node = document.createElement("div");
     node.className = "map-me";
     me.current = new current.kakao.maps.CustomOverlay({ map: current.map, position: new current.kakao.maps.LatLng(myPoint.lat, myPoint.lng), content: node, xAnchor: 0, yAnchor: 0, zIndex: 6 });
-  };
-
-  const mark = () => {
-    const { current } = kit;
-    if (!current) return;
-    dot.current?.setMap(null);
-    dot.current = null;
-    if (!pinPoint) return;
-    const node = document.createElement("div");
-    node.className = "map-dot";
-    dot.current = new current.kakao.maps.CustomOverlay({ map: current.map, position: new current.kakao.maps.LatLng(pinPoint.lat, pinPoint.lng), content: node, xAnchor: 0, yAnchor: 0, zIndex: 3 });
   };
 
   const trace = () => {
@@ -287,6 +300,30 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
         latest.current.onView(view.current);
       };
       kakao.maps.event.addListener(map, "idle", send);
+      // 휴식에서는 지도를 끄는 동안 핀을 띄우고, 지도가 멈추면 핀 끝이 가리키는 곳을 고른다.
+      let dragging = false;
+      kakao.maps.event.addListener(map, "dragstart", () => {
+        if (latest.current.homes) return;
+        dragging = true;
+        centerPin.current?.classList.add("up");
+      });
+      kakao.maps.event.addListener(map, "idle", () => {
+        if (!dragging) return;
+        dragging = false;
+        centerPin.current?.classList.remove("up");
+        const { x, y } = focusSpot();
+        const spot = map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(x, y));
+        const next = { lat: spot.getLat(), lng: spot.getLng() };
+        placed.current = `${next.lat},${next.lng},false`;
+        if (latest.current.onPoint(next) === false && latest.current.focusPoint) {
+          placed.current = `${latest.current.focusPoint.lat},${latest.current.focusPoint.lng},false`;
+          centerOn(latest.current.focusPoint, true);
+        }
+      });
+      // 지도 버튼은 화면 가운데를 기준으로 확대하므로 대상을 핀 자리로 되돌린다.
+      kakao.maps.event.addListener(map, "zoom_changed", () => {
+        if (!latest.current.homes && latest.current.focusPoint && !dragging) centerOn(latest.current.focusPoint);
+      });
       const reach = () => {
         const projection = map.getProjection();
         const low = projection.coordsFromContainerPoint(new kakao.maps.Point(0, 0));
@@ -329,7 +366,9 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
       let lastStep = 0;
       const zoomAt = (clientX: number, clientY: number, step: number) => {
         const box = host.current!.getBoundingClientRect();
-        const anchor = map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(clientX - box.left, clientY - box.top));
+        // 휴식에서는 핀이 가리키는 곳이 벗어나지 않게 핀을 기준으로 확대한다.
+        const { x, y } = latest.current.homes ? { x: clientX - box.left, y: clientY - box.top } : focusSpot();
+        const anchor = map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(x, y));
         const level = Math.min(MAX_LEVEL, Math.max(1, map.getLevel() + step));
         if (level !== map.getLevel()) map.setLevel(level, { anchor, animate: { duration: 160 } });
       };
@@ -369,7 +408,11 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
         window.removeEventListener("gesturestart", stopGesture);
         window.removeEventListener("gesturechange", onGesture);
       };
-      observer = new ResizeObserver(() => map.relayout());
+      observer = new ResizeObserver(() => {
+        map.relayout();
+        standPin();
+        if (!latest.current.homes && latest.current.focusPoint) centerOn(latest.current.focusPoint);
+      });
       observer.observe(host.current);
       redraw.current();
       send();
@@ -396,5 +439,16 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
     redraw.current();
   }, [cells, cellSize, scores, features, heatColor, homes, activeHome, spots, activeSpot, pinPoint, myPoint, focusPoint?.lat, focusPoint?.lng]);
 
-  return <div ref={host} className="map" aria-label="서울 감각 점수 지도" />;
+  return (
+    <>
+      <div ref={host} className="map" aria-label="서울 감각 점수 지도" />
+      <div ref={centerPin} className="map-pin" hidden={!pinPoint} aria-hidden="true">
+        <i />
+        <svg viewBox="0 0 32 42" width="32" height="42">
+          <path d="M16 1C7.7 1 1 7.7 1 16c0 10.6 12.4 22.8 15 25 2.6-2.2 15-14.4 15-25C31 7.7 24.3 1 16 1Z" fill="#101418" stroke="#fff" strokeWidth="2" />
+          <circle cx="16" cy="16" r="5.5" fill="#fff" />
+        </svg>
+      </div>
+    </>
+  );
 }
