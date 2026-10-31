@@ -516,7 +516,22 @@ export default function Home() {
     return indicatorText(detail?.indicators?.[key]) ?? level(target.cell.burdens.night[sense]);
   };
 
-  // 왼쪽에 모은 화면에서는 지금 감각과 내 감각의 자리가 바뀌어, 두 자리에 모두 그리고 CSS로 하나만 보인다.
+  // 휴식 탭은 화면 비율마다 카드 자리가 달라서, 두 자리에 모두 그리고 CSS로 하나만 보인다.
+  const hoursCard = (placement: string) => (
+    <div className={`slot ${placement}`}>
+      <div className="report-card">
+        <RestHours
+          hour={hour}
+          scoreAt={(mark) => {
+            if (!API_BASE) return target ? restScore(burdenAt(target.cell.burdens, mark), sensitivity) : null;
+            const value = details?.[slotOf(mark)]?.comfort_score;
+            return value == null ? null : Math.round(value);
+          }}
+          onHour={setHour}
+        />
+      </div>
+    </div>
+  );
   const nowCard = (placement: string) => (
     <div className={`report-card ${placement}`}>
       <h2>지금 감각</h2>
@@ -613,8 +628,9 @@ export default function Home() {
                     onChange={setHomeInput}
                   />
                 )}
-                {!isHome && nowCard("only-left-stack")}
-                <div className="sense-tune not-left-stack">
+                {!isHome && hoursCard("only-wide")}
+                {!isHome && nowCard("only-stack")}
+                <div className={`sense-tune ${isHome ? "" : "only-portrait"}`}>
                   <h2>내 감각</h2>
                   {sliders}
                 </div>
@@ -654,21 +670,9 @@ export default function Home() {
                 </>
               ) : (
                 <>
-                  <div className="slot">
-                    <div className="report-card">
-                      <RestHours
-                        hour={hour}
-                        scoreAt={(mark) => {
-                          if (!API_BASE) return restScore(burdenAt(target.cell.burdens, mark), sensitivity);
-                          const value = details?.[slotOf(mark)]?.comfort_score;
-                          return value == null ? null : Math.round(value);
-                        }}
-                        onHour={setHour}
-                      />
-                    </div>
-                  </div>
-                  {nowCard("not-left-stack")}
-                  <div className="sense-tune only-left-stack">
+                  {hoursCard("hide-wide")}
+                  {nowCard("now-side hide-stack")}
+                  <div className="sense-tune hide-portrait">
                     <h2>내 감각</h2>
                     {sliders}
                   </div>
