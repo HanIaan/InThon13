@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     data_mode: Literal["mock", "live"] = "mock"
     cors_dev_origins: str = ""
     cors_prod_origins: str = ""
+    # Ingestion output / precomputed indicator directory (relative paths resolve from backend/).
+    processed_data_dir: str = "../data/processed"
 
     database_url: str | None = None
     supabase_url: str | None = None
