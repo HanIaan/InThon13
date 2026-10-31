@@ -79,7 +79,7 @@ def test_empty_provider_handling(client):
     assert insp["indicators"]["noise"]["score"] is None
     assert insp["indicators"]["light"]["status"] == "missing"
     assert insp["indicators"]["crowd"]["status"] == "missing"
-    assert any("사용 가능한 지표가 없어" in n for n in insp["notes"])
+    assert any("감각지수를 계산하지 않았습니다" in n for n in insp["notes"])
 
     # 3. Recommendations
     res_rec = client.get("/api/v1/recommendations", params={"mode": "housing", "time_slot": "night", "bbox": "126.97,37.55,127.00,37.58"})
