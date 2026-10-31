@@ -135,6 +135,7 @@ export function Dock({
   onQuery,
   onPick,
   onMiss,
+  near,
 }: {
   isHome: boolean;
   showControls: boolean;
@@ -144,6 +145,8 @@ export function Dock({
   onQuery: (query: string) => void;
   onPick: (place: SearchPlace) => void;
   onMiss: () => void;
+  // 지금 보고 있는 위치. 같은 이름이면 가까운 곳을 앞에 둔다.
+  near?: { lat: number; lng: number };
 }) {
   const [results, setResults] = useState<SearchPlace[]>([]);
 
@@ -155,7 +158,7 @@ export function Dock({
     }
     let current = true;
     const timer = window.setTimeout(() => {
-      searchPlaces(text).then((list) => {
+      searchPlaces(text, near).then((list) => {
         if (current) setResults(list);
       });
     }, SEARCH_DELAY_MS);
@@ -219,7 +222,7 @@ export function Dock({
         onSubmit={async (e) => {
           e.preventDefault();
           // 입력 중 지연된 목록이 아니라 지금 입력한 글자로 찾는다.
-          const [first] = await searchPlaces(query.trim());
+          const [first] = await searchPlaces(query.trim(), near);
           if (first) choose(first);
           else if (query.trim()) onMiss();
         }}

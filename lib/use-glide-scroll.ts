@@ -10,6 +10,29 @@ function stops() {
   return [0, ...tops].map((top) => Math.min(Math.round(top), max));
 }
 
+// 휠이 지나가는 요소 중 그 방향으로 더 스크롤할 수 있는 것이 있으면 true다.
+// 가로로만 스크롤되는 줄(추천 카드)은 세로 휠도 가로로 돌려 준다.
+function scrollsInside(event: WheelEvent) {
+  const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+  for (let node = event.target as HTMLElement | null; node && node !== document.body; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    const canY = /(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1;
+    const canX = /(auto|scroll)/.test(style.overflowX) && node.scrollWidth > node.clientWidth + 1;
+    if (!horizontal && canY) {
+      const room = event.deltaY > 0 ? node.scrollHeight - node.clientHeight - node.scrollTop : node.scrollTop;
+      if (room > 1) return true;
+    }
+    if (canX && (horizontal || !canY)) {
+      if (!horizontal) {
+        event.preventDefault();
+        node.scrollBy({ left: event.deltaY, behavior: "instant" });
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 // 휠 한 번에 한 화면씩 옮기고, 도착할수록 느려지게 한다. 터치는 CSS 스냅이 맡는다.
 export function useGlideScroll() {
   useEffect(() => {
@@ -40,6 +63,8 @@ export function useGlideScroll() {
 
     const onWheel = (event: WheelEvent) => {
       if (event.ctrlKey) return;
+      // 검색 목록·추천 카드처럼 안에서 스크롤되는 곳은 그 안에서 움직이게 둔다.
+      if (scrollsInside(event)) return;
       event.preventDefault();
       if (event.timeStamp - last > WHEEL_QUIET_MS) {
         sum = 0;

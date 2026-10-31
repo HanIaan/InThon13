@@ -1,12 +1,49 @@
 "use client";
 
 import type { Recommendation } from "@/lib/data";
-import { useId } from "react";
+import { useId, useRef, type PointerEvent } from "react";
 import { grade, GRADE_A, GRADE_B, HOUR_MARKS, level, SENSE_LABEL, type Sense } from "@/lib/rest";
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
 
 type PickedPlace = { name: string; detail: string; score: number | null };
+
+// 마우스로도 카드 줄을 잡아 끌어 넘길 수 있게 한다. 끌었으면 손을 뗄 때의 클릭은 무시한다.
+// 터치는 브라우저 기본 가로 스크롤이 맡는다.
+function useDragScroll() {
+  const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null);
+  const ignoreClick = useRef(false);
+  return {
+    onPointerDown: (event: PointerEvent<HTMLOListElement>) => {
+      if (event.pointerType !== "mouse" || event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return;
+      drag.current = { x: event.clientX, left: event.currentTarget.scrollLeft, moved: false };
+    },
+    onPointerMove: (event: PointerEvent<HTMLOListElement>) => {
+      const state = drag.current;
+      if (!state) return;
+      const dx = event.clientX - state.x;
+      if (!state.moved && Math.abs(dx) < 5) return;
+      if (!state.moved) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        // 끄는 동안에는 스냅을 꺼서 손을 따라오게 하고, 놓으면 다시 카드에 맞춘다.
+        event.currentTarget.style.scrollSnapType = "none";
+      }
+      state.moved = true;
+      event.currentTarget.scrollLeft = state.left - dx;
+    },
+    onPointerUp: (event: PointerEvent<HTMLOListElement>) => {
+      ignoreClick.current = Boolean(drag.current?.moved);
+      drag.current = null;
+      event.currentTarget.style.scrollSnapType = "";
+    },
+    onClickCapture: (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+      if (!ignoreClick.current) return;
+      ignoreClick.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+  };
+}
 
 export function SpotsPanel({
   area,
@@ -27,13 +64,14 @@ export function SpotsPanel({
   lightOff: boolean;
   onChoose: (id: string) => void;
 }) {
+  const dragScroll = useDragScroll();
   return (
     <aside className="spots glass" aria-label="추천 휴식 장소">
       <header>
         <h2>지금 쉬기 좋은 곳</h2>
         <p>{area} 주변 · {time}</p>
       </header>
-      <ol>
+      <ol {...dragScroll}>
         {picked && (
           <li>
             <button className="on">

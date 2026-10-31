@@ -110,7 +110,8 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .time-sky { position: absolute; top: 9px; right: 0; left: 0; height: 16px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(16, 20, 24, 0.08); background: linear-gradient(90deg, #111a33 0%, #1a2547 22%, #e9a27a 29%, #9fd0ef 38%, #bfe3f6 52%, #9fd0ef 66%, #f0a764 74%, #3a3560 83%, #111a33 100%); }
 .time-mark { position: absolute; top: 3px; width: 28px; height: 28px; margin-left: -14px; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 2px 8px rgba(16, 20, 24, 0.35); pointer-events: none; transition: left 0.15s ease; }
 .time-mark.sun { background: radial-gradient(circle, #ffe27a 0 45%, #f7b733 100%); }
-.time-mark.moon { background: radial-gradient(circle at 66% 34%, #1b2445 0 34%, #e9ecf5 36%); }
+/* 달도 해처럼 원 정중앙에 그린다. 밝은 테두리 안에 어두운 원, 그 안에 작은 초승달 빛. */
+.time-mark.moon { background: radial-gradient(circle at 38% 38%, #e9ecf5 0 22%, transparent 24%), radial-gradient(circle, #1b2445 0 46%, #e9ecf5 48%); }
 .time-rail input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 
 .search { box-sizing: border-box; display: flex; gap: 6px; width: 100%; height: 54px; padding: 6px; border-radius: 999px; }
@@ -128,6 +129,10 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
   backdrop-filter: blur(26px) saturate(1.6);
   scrollbar-width: thin;
   scrollbar-color: rgba(16, 20, 24, 0.18) transparent;
+  /* 손가락 스크롤이 목록 안에서 끝나고 뒤 화면으로 넘어가지 않게 한다. */
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   animation: search-rise 0.18s ease-out;
 }
 @keyframes search-rise { from { opacity: 0; transform: translateY(6px); } }
@@ -368,7 +373,9 @@ html.locked { overflow: hidden; }
   /* 검색창 58+54, 시간 바 52, 간격 10씩 */
   .spots { top: auto; right: 12px; left: 12px; bottom: 184px; width: auto; transform: none; padding: 8px; }
   .spots header { display: none; }
-  .spots ol { display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .spots ol { display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x pan-y; cursor: grab; }
+  .spots ol::-webkit-scrollbar { display: none; }
+  .spots ol:active { cursor: grabbing; }
   .spots li { flex: 0 0 80%; scroll-snap-align: start; }
   .spots li button { height: 100%; }
   .spots > .hint { padding: 5px 6px 0; }

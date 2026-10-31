@@ -521,7 +521,7 @@ export default function Home() {
         />
       )}
 
-      <Dock isHome={isHome} showControls={!up} hour={hour} query={query} onHour={setHour} onQuery={setQuery} onPick={pick} onMiss={() => setToast("검색 결과가 없어요")} />
+      <Dock isHome={isHome} showControls={!up} hour={hour} query={query} onHour={setHour} onQuery={setQuery} onPick={pick} onMiss={() => setToast("검색 결과가 없어요")} near={isHome ? home : point} />
 
       {target && (
         <GlassSheets isHome={isHome}>
