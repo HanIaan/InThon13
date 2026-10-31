@@ -34,8 +34,8 @@ RECOMMENDATION_DEFAULT_RADIUS_M = 1500
 # ---- Scoring ----
 SENSITIVITY_MIN = 0
 SENSITIVITY_MAX = 5
-GRADE_A_MIN = 65.0  # score >= 65 -> A (same as b-home frontend `grade`)
-GRADE_B_MIN = 45.0  # 45 <= score < 65 -> B, else C
+GRADE_A_MIN = 70.0  # score >= 70 -> A
+GRADE_B_MIN = 40.0  # 40 <= score < 70 -> B, else C
 
 
 class TimeSlot(str, Enum):
