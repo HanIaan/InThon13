@@ -137,7 +137,9 @@ def inspect(provider: DataProvider, lat: float, lng: float, slot: TimeSlot, sens
     ix, iy = grid.cell_of(lng, lat)
     gid = grid.grid_id(ix, iy)
     cell = provider.get_cell_detail(gid, slot, lng, lat) or CellIndicators(
-        grid_id=gid, time_slot=slot, noise=_missing(Indicator.noise), light=_missing(Indicator.light), crowd=_missing(Indicator.crowd))
+        grid_id=gid, time_slot=slot, noise=_missing(Indicator.noise),
+        light=IndicatorValue(None, None, DataStatus.not_applicable, 0.0) if slot == TimeSlot.day else _missing(Indicator.light),
+        crowd=_missing(Indicator.crowd))
     sc = ScoredCell(cell, _sens_map(sens))
     notes = ["건물 단위 실측값이 아니라 좌표 주변 200m 격자의 환경 추정값입니다."]
     if sc.data_status is DataStatus.mock:
@@ -206,7 +208,7 @@ def data_status(provider: DataProvider) -> m.DataStatusResponse:
     x0, y0, x1, y1 = grid.bbox_cell_range(grid.clip_to_seoul((-180, -90, 180, 90)))
     return m.DataStatusResponse(
         data_mode=provider.data_mode, sources=sources,
-        grid=m.GridStatus(crs=GRID_CRS, cell_size_m=GRID_CELL_SIZE_M, cell_count=(x1 - x0 + 1) * (y1 - y0 + 1),
+        grid=m.GridStatus(crs=GRID_CRS, cell_size_m=GRID_CELL_SIZE_M, cell_count=getattr(provider, "cell_count", (x1 - x0 + 1) * (y1 - y0 + 1)),
                           precomputed_slots=provider.precomputed_slots()),
         generated_at=_now(),
     )
