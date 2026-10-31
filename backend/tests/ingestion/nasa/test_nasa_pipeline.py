@@ -79,6 +79,8 @@ def _create_synthetic_seoul_hdf5(file_path: Path, product: str = "VNP46A3", tile
         ds_qual.attrs["_FillValue"] = 255
         ds_cloud = grp.create_dataset("QF_Cloud_Mask", data=cloud_data)
         ds_cloud.attrs["_FillValue"] = 255
+        f.attrs["RangeBeginningDate"] = np.bytes_("2026-09-01")
+        f.attrs["RangeEndingDate"] = np.bytes_("2026-09-30")
 
     return file_path
 
@@ -215,6 +217,8 @@ class TestHDF5ReaderAndExtraction:
 
             ds_cloud = grp.create_dataset("QF_Cloud_Mask", data=cloud)
             ds_cloud.attrs["_FillValue"] = 255
+            f.attrs["RangeBeginningDate"] = np.bytes_("2026-09-01")
+            f.attrs["RangeEndingDate"] = np.bytes_("2026-09-30")
 
         return h5_path
 
@@ -390,3 +394,103 @@ class TestSyntheticSeoulRunner:
             assert "radiance" in header
             rows = list(reader)
             assert len(rows) > 0
+
+
+# Layout, dtypes and attributes copied from the real granule
+# VNP46A3.A2026244.h30v05.002.2026291122007.h5 (LAADS DAAC, collection 5200), values synthetic.
+A3_GROUP = "HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields"
+A3_FILL = np.float32(-999.9)
+
+
+def _create_real_layout_a3(file_path: Path, *, north: float = 40.0) -> Path:
+    rows = cols = 2400
+    rad = np.full((rows, cols), A3_FILL, dtype=np.float32)
+    qual = np.full((rows, cols), 255, dtype=np.uint8)
+    # Seoul City Hall (126.978E, 37.5665N) -> row floor((40-37.5665)*240)=584, col floor(6.978*240)=1674
+    rad[584, 1674], qual[584, 1674] = 151.3, 0   # good
+    rad[584, 1675], qual[584, 1675] = 42.0, 2    # gap filled (A3 code 2)
+    rad[584, 1676], qual[584, 1676] = 7.5, 1     # poor (A3 code 1)
+    rad[584, 1677], qual[584, 1677] = A3_FILL, 255
+    with h5py.File(file_path, "w") as f:
+        grp = f.create_group(A3_GROUP)
+        for name in ("NearNadir_Composite_Snow_Free", "AllAngle_Composite_Snow_Free"):
+            ds = grp.create_dataset(name, data=rad)
+            ds.attrs["_FillValue"] = np.array([A3_FILL], dtype=np.float32)
+            ds.attrs["offset"] = np.array([0.0], dtype=np.float32)
+            ds.attrs["scale_factor"] = np.array([1.0], dtype=np.float32)
+            ds.attrs["units"] = np.bytes_("nWatts/(cm^2 sr)")
+            dq = grp.create_dataset(f"{name}_Quality", data=qual)
+            dq.attrs["_FillValue"] = np.array([255], dtype=np.uint8)
+        # Real files store upper-left pixel corners here, not centres.
+        grp.create_dataset("lat", data=40.0 - np.arange(rows) / 240.0)
+        grp.create_dataset("lon", data=120.0 + np.arange(cols) / 240.0)
+        for key, val in (("WestBoundingCoord", 120.0), ("EastBoundingCoord", 130.0),
+                         ("NorthBoundingCoord", north), ("SouthBoundingCoord", 30.0)):
+            f.attrs[key] = np.array([val])
+        f.attrs["RangeBeginningDate"] = np.bytes_("2026-09-01")
+        f.attrs["RangeEndingDate"] = np.bytes_("2026-09-30")
+        f.attrs["ShortName"] = np.bytes_("VNP46A3")
+    return file_path
+
+
+class TestRealVNP46A3Layout:
+    @pytest.fixture
+    def a3_h5(self, tmp_path) -> Path:
+        return _create_real_layout_a3(tmp_path / "VNP46A3.A2026244.h30v05.002.2026291122007.h5")
+
+    def test_reader_defaults_to_allangle_and_composite_quality(self, a3_h5):
+        with BlackMarbleHDF5(a3_h5) as reader:
+            assert reader.tile == "h30v05"
+            assert reader.radiance_ds_name == f"{A3_GROUP}/AllAngle_Composite_Snow_Free"
+            assert reader.quality_ds_name == f"{A3_GROUP}/AllAngle_Composite_Snow_Free_Quality"
+            assert reader.quality_scheme == "composite"
+            assert reader.cloud_ds_name is None
+            assert reader.scale_factor == 1.0 and reader.add_offset == 0.0
+            assert abs(reader.fill_value - (-999.9)) < 1e-3
+            assert reader.period_start == date(2026, 9, 1)
+            assert reader.period_end == date(2026, 9, 30)
+
+    def test_explicit_layer_uses_its_own_quality(self, a3_h5):
+        with BlackMarbleHDF5(a3_h5, radiance_dataset="NearNadir_Composite_Snow_Free") as reader:
+            assert reader.radiance_ds_name == f"{A3_GROUP}/NearNadir_Composite_Snow_Free"
+            assert reader.quality_ds_name == f"{A3_GROUP}/NearNadir_Composite_Snow_Free_Quality"
+        with pytest.raises(KeyError):
+            BlackMarbleHDF5(a3_h5, radiance_dataset="No_Such_Layer").open()
+
+    def test_pixel_centre_is_half_pixel_inside_corner_axes(self, a3_h5):
+        with BlackMarbleHDF5(a3_h5) as reader:
+            lng, lat = reader.pixel_center_coords(584, 1674)
+        half = 0.5 / 240.0
+        assert lat == round(40.0 - 584 / 240.0 - half, 6)
+        assert lng == round(120.0 + 1674 / 240.0 + half, 6)
+        # City Hall must fall inside this pixel's footprint
+        assert abs(lat - 37.5665) <= half and abs(lng - 126.978) <= half
+
+    def test_composite_quality_translated_to_mandatory_codes(self, a3_h5):
+        records = extract_night_lights(a3_h5, bbox=(126.975, 37.562, 126.995, 37.567))
+        by_id = {r.pixel_id: r for r in records}
+        good, gap, poor, fill = (by_id[f"h30v05_0584_{c:04d}"] for c in (1674, 1675, 1676, 1677))
+        assert (good.radiance, good.quality_flag) == (pytest.approx(151.3, abs=1e-3), 0)
+        assert (gap.radiance, gap.quality_flag) == (42.0, 1)      # A3 2 (gap filled) -> 1
+        assert (poor.radiance, poor.quality_flag) == (7.5, 2)     # A3 1 (poor) -> 2
+        assert (fill.radiance, fill.quality_flag) == (None, 255)
+        assert all(r.cloud_flag is None for r in records)
+        assert all(r.period_start == date(2026, 9, 1) and r.period_end == date(2026, 9, 30) for r in records)
+
+    def test_period_conflicting_with_file_raises(self, a3_h5):
+        with pytest.raises(ValueError, match="contradicts file period"):
+            extract_night_lights(a3_h5, period_start=date(2026, 8, 1), period_end=date(2026, 8, 31),
+                                 bbox=(126.975, 37.562, 126.995, 37.567))
+
+    def test_file_without_period_requires_explicit_period(self, tmp_path):
+        h5_path = _create_real_layout_a3(tmp_path / "VNP46A3.A2026244.h30v05.nop.h5")
+        with h5py.File(h5_path, "a") as f:
+            del f.attrs["RangeBeginningDate"]
+            del f.attrs["RangeEndingDate"]
+        with pytest.raises(ValueError, match="pass period_start/period_end"):
+            extract_night_lights(h5_path, bbox=(126.975, 37.562, 126.995, 37.567))
+
+    def test_tile_bounds_mismatch_raises(self, tmp_path):
+        h5_path = _create_real_layout_a3(tmp_path / "VNP46A3.A2026244.h30v05.bad.h5", north=50.0)
+        with pytest.raises(ValueError, match="NorthBoundingCoord"):
+            BlackMarbleHDF5(h5_path).open()

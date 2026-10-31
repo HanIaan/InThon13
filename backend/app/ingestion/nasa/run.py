@@ -66,6 +66,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tile", default="h30v05", help="Black Marble tile ID (default: h30v05 for Seoul)")
     parser.add_argument("--input-file", help="Path to input HDF5 file (skips download)")
     parser.add_argument(
+        "--layer",
+        help="Radiance dataset name (default: AllAngle_Composite_Snow_Free for VNP46A3/A4, "
+             "Gap_Filled_DNB_BRDF-Corrected_NTL for VNP46A2)",
+    )
+    parser.add_argument(
         "--output-file",
         default=str(default_out),
         help=f"Path for output processed CSV (default: {default_out})",
@@ -104,9 +109,9 @@ def run(args: argparse.Namespace) -> int:
             print(f"  URL:      {g.download_url}\n")
         return 0
 
-    # Determine period dates
-    start_date: date
-    end_date: date
+    # Determine period dates (None -> taken from the HDF5 file metadata)
+    start_date: date | None
+    end_date: date | None
 
     if args.month:
         parts = args.month.split("-")
@@ -124,9 +129,7 @@ def run(args: argparse.Namespace) -> int:
         start_date = date(y, 1, 1)
         end_date = date(y, 12, 31)
     else:
-        # Default to previous month
-        start_date = date(2026, 9, 1)
-        end_date = date(2026, 9, 30)
+        start_date = end_date = None
 
     input_path: Path | None = None
     if args.input_file:
@@ -173,14 +176,19 @@ def run(args: argparse.Namespace) -> int:
             return 1
 
     # Extract night light records
-    records = extract_night_lights(
-        h5_path=input_path,
-        product=args.product,
-        period_start=start_date,
-        period_end=end_date,
-        bbox=bbox,
-        tile=args.tile,
-    )
+    try:
+        records = extract_night_lights(
+            h5_path=input_path,
+            product=args.product,
+            period_start=start_date,
+            period_end=end_date,
+            bbox=bbox,
+            tile=args.tile,
+            radiance_dataset=args.layer,
+        )
+    except (ValueError, KeyError) as exc:
+        log.error("Extraction failed, nothing written: %s", exc)
+        return 1
 
     out_csv = save_records_to_csv(records, args.output_file)
 
