@@ -105,6 +105,7 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [toast, setToast] = useState("");
   const [locating, setLocating] = useState(false);
+  const [spotsOpen, setSpotsOpen] = useState(true);
   const [myPoint, setMyPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [applied, setApplied] = useState(sensitivity);
   const [lookup, setLookup] = useState<{ key: string; address?: string; name?: string } | null>(null);
@@ -497,6 +498,17 @@ export default function Home() {
     return indicatorText(detail?.indicators?.[key]) ?? level(target.cell.burdens.night[sense]);
   };
 
+  // 왼쪽에 모은 화면에서는 지금 감각과 내 감각의 자리가 바뀌어, 두 자리에 모두 그리고 CSS로 하나만 보인다.
+  const nowCard = (placement: string) => (
+    <div className={`report-card ${placement}`}>
+      <h2>지금 감각</h2>
+      <dl className="levels">
+        {SENSES.map((s) => (
+          <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
+        ))}
+      </dl>
+    </div>
+  );
   const sliders = <SensitivitySliders value={sensitivity} isHome={isHome} lightOff={lightOff} onChange={setSensitivity} />;
   const sheetScore = { value: score, label, color: scoreGrade.color };
   const scoreTitle = isHome ? "내 감각 종합 점수" : `${hourLabel(hour)} 내 감각 쉼 지수`;
@@ -549,6 +561,8 @@ export default function Home() {
             return { sound: burdenOf("noise"), light: burdenOf("light"), crowd: burdenOf("crowd") };
           }}
           lightOff={lightOff}
+          open={spotsOpen}
+          onToggle={() => setSpotsOpen(!spotsOpen)}
           onChoose={chooseSpot}
         />
       )}
@@ -572,7 +586,8 @@ export default function Home() {
                     onChange={setHomeInput}
                   />
                 )}
-                <div className="sense-tune">
+                {!isHome && nowCard("only-left-stack")}
+                <div className="sense-tune not-left-stack">
                   <h2>내 감각</h2>
                   {sliders}
                 </div>
@@ -625,13 +640,10 @@ export default function Home() {
                       />
                     </div>
                   </div>
-                  <div className="report-card">
-                    <h2>지금 감각</h2>
-                    <dl className="levels">
-                      {SENSES.map((s) => (
-                        <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
-                      ))}
-                    </dl>
+                  {nowCard("not-left-stack")}
+                  <div className="sense-tune only-left-stack">
+                    <h2>내 감각</h2>
+                    {sliders}
                   </div>
                 </>
               )

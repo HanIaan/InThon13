@@ -14,6 +14,8 @@ function useDragScroll() {
   const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null);
   const ignoreClick = useRef(false);
   return {
+    // 지도까지 끌리지 않게 막는다.
+    onMouseDown: (event: { stopPropagation: () => void }) => event.stopPropagation(),
     onPointerDown: (event: PointerEvent<HTMLOListElement>) => {
       if (event.pointerType !== "mouse" || event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return;
       drag.current = { x: event.clientX, left: event.currentTarget.scrollLeft, moved: false };
@@ -32,9 +34,16 @@ function useDragScroll() {
       event.currentTarget.scrollLeft = state.left - dx;
     },
     onPointerUp: (event: PointerEvent<HTMLOListElement>) => {
-      ignoreClick.current = Boolean(drag.current?.moved);
+      const list = event.currentTarget;
+      const state = drag.current;
+      ignoreClick.current = Boolean(state?.moved);
       drag.current = null;
-      event.currentTarget.style.scrollSnapType = "";
+      list.style.scrollSnapType = "";
+      if (!state?.moved) return;
+      // 민 방향의 다음 카드로 맞춘다. 그냥 두면 스냅이 조금 민 카드를 제자리로 되돌린다.
+      const offsets = [...list.children].map((item) => (item as HTMLElement).offsetLeft - (list.children[0] as HTMLElement).offsetLeft);
+      const target = list.scrollLeft > state.left ? offsets.find((offset) => offset > state.left + 1) : offsets.findLast((offset) => offset < state.left - 1);
+      list.scrollTo({ left: target ?? state.left, behavior: "smooth" });
     },
     onClickCapture: (event: { preventDefault: () => void; stopPropagation: () => void }) => {
       if (!ignoreClick.current) return;
@@ -53,6 +62,8 @@ export function SpotsPanel({
   activeId,
   burdenOf,
   lightOff,
+  open,
+  onToggle,
   onChoose,
 }: {
   area: string;
@@ -62,11 +73,14 @@ export function SpotsPanel({
   activeId: string | null;
   burdenOf: (item: Recommendation) => Record<Sense, number | null>;
   lightOff: boolean;
+  open: boolean;
+  onToggle: () => void;
   onChoose: (id: string) => void;
 }) {
   const dragScroll = useDragScroll();
   return (
-    <aside className="spots glass" aria-label="추천 휴식 장소">
+    <aside className={`spots glass ${open ? "" : "closed"}`} aria-label="추천 휴식 장소">
+      <button className="spots-toggle glass" onClick={onToggle} aria-expanded={open} aria-label={open ? "추천 장소 접기" : "추천 장소 펼치기"}>{open ? "›" : "‹"}</button>
       <header>
         <h2>지금 쉬기 좋은 곳</h2>
         <p>{area} 주변 · {time}</p>
@@ -178,9 +192,9 @@ export function RestHours({
             <circle key={p.mark} cx={p.x} cy={yOf(p.value)} r={p.mark === hour ? 5.5 : 3.5} fill={grade(p.value).color} stroke="#fff" strokeWidth="1.5" />
           ))}
         </svg>
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${HOUR_MARKS.length}, 1fr)`, gap: 2, marginTop: 6 }}>
+        <div className="hour-marks">
           {points.map((p) => (
-            <button key={p.mark} className={p.mark === hour ? "on" : ""} aria-pressed={p.mark === hour} onClick={() => onHour(p.mark)} style={{ display: "grid", justifyItems: "center", gap: 0, padding: "4px 2px", textAlign: "center", fontSize: 12 }}>
+            <button key={p.mark} className={p.mark === hour ? "on" : ""} aria-pressed={p.mark === hour} onClick={() => onHour(p.mark)} style={{ left: `${(p.x / GRAPH.w) * 100}%`, width: `${(step / GRAPH.w) * 100}%` }}>
               <span>{p.mark}시</span>
               <b style={{ color: p.value === null ? undefined : grade(p.value).color }}>{p.value ?? "-"}</b>
             </button>
