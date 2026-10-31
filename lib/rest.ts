@@ -67,25 +67,45 @@ export function grade(score: number): Grade {
   return { letter: "C", label: "쉬기 어려움", color: "#cf3338" };
 }
 
-const STOPS: [number, [number, number, number]][] = [
+// 휴식은 주거 지도와 구분되도록 쉬기 어려울수록 무채색, 쉬기 좋을수록 맑은 초록으로 칠한다.
+const REST_GRADE_COLOR: Record<Grade["letter"], string> = { A: "#1f7a55", B: "#4a7c64", C: "#6b7078" };
+
+export function restGrade(score: number): Grade {
+  const base = grade(score);
+  return { ...base, color: REST_GRADE_COLOR[base.letter] };
+}
+
+type Rgb = [number, number, number];
+type Stops = [number, Rgb][];
+
+const REST_STOPS: Stops = [
+  [40, [208, 208, 204]],
+  [55, [165, 215, 175]],
+  [70, [45, 160, 105]],
+];
+
+const HOME_STOPS: Stops = [
   [15, [229, 72, 77]],
   [50, [240, 196, 84]],
   [85, [48, 164, 108]],
 ];
 
 // 등급 경계에서 색이 끊기지 않도록 점수를 색으로 연속 변환한다.
-export function restColor(score: number): [number, number, number] {
-  if (score <= STOPS[0][0]) return STOPS[0][1];
-  for (let i = 1; i < STOPS.length; i++) {
-    const [to, end] = STOPS[i];
-    const [from, start] = STOPS[i - 1];
+function scoreColor(stops: Stops, score: number): Rgb {
+  if (score <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    const [to, end] = stops[i];
+    const [from, start] = stops[i - 1];
     if (score <= to) {
       const t = (score - from) / (to - from);
-      return start.map((v, c) => Math.round(v + (end[c] - v) * t)) as [number, number, number];
+      return start.map((v, c) => Math.round(v + (end[c] - v) * t)) as Rgb;
     }
   }
-  return STOPS[STOPS.length - 1][1];
+  return stops[stops.length - 1][1];
 }
+
+export const restColor = (score: number) => scoreColor(REST_STOPS, score);
+export const homeColor = (score: number) => scoreColor(HOME_STOPS, score);
 
 export function level(value: number): string {
   if (value < 35) return "잔잔함";

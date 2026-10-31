@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import type { GridFeature } from "@/lib/api";
 import { inside, type Cell, type Home, type Recommendation } from "@/lib/data";
-import { featureImage, heatImage } from "@/lib/heat-image";
+import { featureImage, heatImage, type HeatColor } from "@/lib/heat-image";
 import { loadKakao } from "@/lib/kakao";
 import type { MapView } from "@/lib/seoul";
 
@@ -17,6 +17,7 @@ type Props = {
   cellSize: { lat: number; lng: number };
   scores: Map<string, number>;
   features: GridFeature[] | null;
+  heatColor: HeatColor;
   pinPoint: Point | null;
   myPoint?: Point | null;
   sheetUp?: boolean;
@@ -139,7 +140,7 @@ export default function KakaoMap(props: Props) {
   return failed ? <FallbackMap {...props} /> : <KakaoLayer {...props} onFail={() => setFailed(true)} />;
 }
 
-function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, sheetUp, zoomRef, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
+function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, myPoint, sheetUp, zoomRef, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const kit = useRef<{ kakao: any; map: any; heat: any; buildings: any } | null>(null);
   const pins = useRef<any[]>([]);
@@ -158,7 +159,7 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, shee
     const { current } = kit;
     if (!current) return;
     if (features?.length || cells.length) {
-      const image = features?.length ? featureImage(features) : heatImage(cells, scores, cellSize);
+      const image = features?.length ? featureImage(features, heatColor) : heatImage(cells, scores, cellSize, heatColor);
       current.heat.show(image.url, image.bounds);
     }
     if (homes?.length && view.current) {
@@ -393,7 +394,7 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, shee
 
   useEffect(() => {
     redraw.current();
-  }, [cells, cellSize, scores, features, homes, activeHome, spots, activeSpot, pinPoint, myPoint, focusPoint?.lat, focusPoint?.lng]);
+  }, [cells, cellSize, scores, features, heatColor, homes, activeHome, spots, activeSpot, pinPoint, myPoint, focusPoint?.lat, focusPoint?.lng]);
 
-  return <div ref={host} className="map" aria-label="서울 쉼 지수 지도" />;
+  return <div ref={host} className="map" aria-label="서울 감각 점수 지도" />;
 }

@@ -6,7 +6,7 @@ import "leaflet/dist/leaflet.css";
 import type { GridFeature } from "@/lib/api";
 import { type Cell, type Home, type Recommendation } from "@/lib/data";
 import { SEOUL, type MapView } from "@/lib/seoul";
-import { featureImage, heatImage } from "@/lib/heat-image";
+import { featureImage, heatImage, type HeatColor } from "@/lib/heat-image";
 
 type Point = { lat: number; lng: number };
 
@@ -16,6 +16,7 @@ type Props = {
   cellSize: { lat: number; lng: number };
   scores: Map<string, number>;
   features: GridFeature[] | null;
+  heatColor: HeatColor;
   pinPoint: Point | null;
   focusPoint: Point | null;
   spots: Recommendation[];
@@ -56,6 +57,7 @@ export default function RestMap({
   cellSize,
   scores,
   features,
+  heatColor,
   pinPoint,
   focusPoint,
   spots,
@@ -144,11 +146,11 @@ export default function RestMap({
     const overlay = heat.current;
     if (!overlay) return;
     if (cells.length || features?.length) {
-      const image = features?.length ? featureImage(features) : heatImage(cells, scores, cellSize);
+      const image = features?.length ? featureImage(features, heatColor) : heatImage(cells, scores, cellSize, heatColor);
       overlay.setBounds(L.latLngBounds(image.bounds));
       overlay.setUrl(image.url);
     }
-  }, [cells, cellSize, scores, features]);
+  }, [cells, cellSize, scores, features, heatColor]);
 
   // 주거 탭에서는 선택할 수 있는 건물을 지도에 표시한다.
   useEffect(() => {
@@ -222,5 +224,5 @@ export default function RestMap({
     placed.current = true;
   }, [focusPoint?.lat, focusPoint?.lng, Boolean(homes)]);
 
-  return <div ref={host} className="map" aria-label="서울 쉼 지수 지도" />;
+  return <div ref={host} className="map" aria-label="서울 감각 점수 지도" />;
 }

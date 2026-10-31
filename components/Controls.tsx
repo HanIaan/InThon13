@@ -152,7 +152,7 @@ export function TuneCard({
       {open && (
         <>
           {children}
-          <div className="legend">
+          <div className={`legend ${isHome ? "" : "rest"}`}>
             <i />
             <p><span>{isHome ? "잠자리 주의" : "쉬기 어려움"}</span><span>{isHome ? "잠들기 좋음" : "쉬기 좋음"}</span></p>
           </div>
@@ -212,8 +212,8 @@ export function Dock({
 
   return (
     <div className={`dock ${showControls ? "" : `up ${isHome ? "" : "on-opening"}`}`}>
-      {showControls && (isHome ? (
-        <p className="slots basis glass">건물을 눌러 선택</p>
+      {isHome ? (
+        showControls && <p className="slots basis glass">건물을 눌러 선택</p>
       ) : (
         <label className="time glass">
           <span className="time-now">
@@ -234,7 +234,7 @@ export function Dock({
             />
           </span>
         </label>
-      ))}
+      )}
       {/* 목록의 유리 흐림이 검색창 안에 갇히지 않게 검색창 밖에 둔다. */}
       {results.length > 0 && (
         <ul className="search-list">

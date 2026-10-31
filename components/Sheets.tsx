@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export type SheetTarget = {
   title: string;
@@ -11,11 +11,31 @@ export type SheetTarget = {
 
 export type SheetScore = { value: number | null; label: string; color: string };
 
+const HINT_KEY = "sheet-hint-seen";
+
+// 브라우저 저장소를 못 쓰는 환경에서는 그때마다 보여 준다.
+function seenHint() {
+  try {
+    const seen = window.localStorage.getItem(HINT_KEY) !== null;
+    window.localStorage.setItem(HINT_KEY, "1");
+    return seen;
+  } catch {
+    return false;
+  }
+}
+
 export function GlassSheets({ isHome, children }: { isHome: boolean; children: ReactNode }) {
+  const [hint, setHint] = useState(false);
+
+  // 위로 올릴 수 있다는 것을 처음 온 사람에게만 시트를 살짝 튕겨 알려 준다.
+  useEffect(() => {
+    if (!seenHint() && window.scrollY < 2) setHint(true);
+  }, []);
+
   return (
     <main className={`page ${isHome ? "home" : "rest"}`}>
       <div className="snap-top" />
-      <div className="sheets">
+      <div className={`sheets ${hint ? "hint" : ""}`} onAnimationEnd={(e) => e.target === e.currentTarget && setHint(false)}>
         <div className="sheet-glass" />
         {children}
       </div>

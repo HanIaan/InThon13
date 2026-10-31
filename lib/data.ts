@@ -112,7 +112,7 @@ const OPEN_KINDS: Record<Slot, string[]> = {
   dawn: ["공원"],
 };
 
-// 쉼 지수가 높아도 너무 멀면 갈 이유가 줄어들므로 거리만큼 감점한다.
+// 감각 점수가 높아도 너무 멀면 갈 이유가 줄어들므로 거리만큼 감점한다.
 // scoreOf가 있으면 서버 점수를 쓰고, 서버 점수가 없는 장소는 추천하지 않는다.
 export function recommendSpots(
   cells: Cell[],

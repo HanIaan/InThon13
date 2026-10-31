@@ -2,7 +2,7 @@
 
 import type { Recommendation } from "@/lib/data";
 import { useId, useRef, type PointerEvent } from "react";
-import { grade, GRADE_A, GRADE_B, HOUR_MARKS, level, SENSE_LABEL, type Sense } from "@/lib/rest";
+import { GRADE_A, GRADE_B, HOUR_MARKS, level, restGrade, SENSE_LABEL, type Sense } from "@/lib/rest";
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
 // 패널이 이 비율 이상 오른쪽 밖으로 나가면 접는다.
@@ -150,7 +150,7 @@ export function SpotsPanel({
   );
 }
 
-const GRAPH = { w: 300, h: 110, padL: 24, padR: 50, padTop: 12, padBottom: 10 };
+const GRAPH = { w: 300, h: 110, padL: 24, padR: 14, padTop: 12, padBottom: 10 };
 
 // 점수(0~100)를 그래프 y좌표로 바꾼다.
 const yOf = (value: number) => GRAPH.padTop + (1 - Math.min(Math.max(value, 0), 100) / 100) * (GRAPH.h - GRAPH.padTop - GRAPH.padBottom);
@@ -165,9 +165,9 @@ export function RestHours({
   onHour: (hour: number) => void;
 }) {
   const id = useId().replace(/:/g, "");
-  const good = grade(GRADE_A).color;
-  const normal = grade(GRADE_B).color;
-  const hard = grade(0).color;
+  const good = restGrade(GRADE_A).color;
+  const normal = restGrade(GRADE_B).color;
+  const hard = restGrade(0).color;
   const step = (GRAPH.w - GRAPH.padL - GRAPH.padR) / (HOUR_MARKS.length - 1);
   const points = HOUR_MARKS.map((mark, i) => ({ mark, value: scoreAt(mark), x: GRAPH.padL + step * i }));
   // 점수가 없는 시간대는 선을 끊고 점을 그리지 않는다.
@@ -187,9 +187,9 @@ export function RestHours({
 
   return (
     <>
-      <h2>시간별 쉼 지수</h2>
-      <div role="group" aria-label="시간별 쉼 지수">
-        <svg viewBox={`0 0 ${GRAPH.w} ${GRAPH.h}`} width="100%" role="img" aria-label="시간별 쉼 지수 그래프" style={{ display: "block", overflow: "visible" }}>
+      <h2>시간별 감각 점수</h2>
+      <div role="group" aria-label="시간별 감각 점수">
+        <svg viewBox={`0 0 ${GRAPH.w} ${GRAPH.h}`} width="100%" role="img" aria-label="시간별 감각 점수 그래프" style={{ display: "block", overflow: "visible" }}>
           <defs>
             <linearGradient id={`${id}-line`} gradientUnits="userSpaceOnUse" x1="0" y1={top} x2="0" y2={base}>
               {stops.flatMap(([color, from, to]) => [
@@ -204,24 +204,17 @@ export function RestHours({
               <text x={GRAPH.padL - 5} y={yOf(tick) + 3} textAnchor="end" fontSize="9" fill="rgba(16,20,24,0.55)">{tick}</text>
             </g>
           ))}
-          {[
-            { label: grade(GRADE_A).label, color: good, from: 100, to: GRADE_A },
-            { label: grade(GRADE_B).label, color: normal, from: GRADE_A, to: GRADE_B },
-            { label: grade(0).label, color: hard, from: GRADE_B, to: 0 },
-          ].map((band) => (
-            <text key={band.label} x={GRAPH.w - GRAPH.padR + 6} y={(yOf(band.from) + yOf(band.to)) / 2 + 3} fontSize="9" fontWeight="600" fill={band.color}>{band.label}</text>
-          ))}
           <path d={area} fill={`url(#${id}-line)`} opacity="0.16" />
           <path d={line} fill="none" stroke={`url(#${id}-line)`} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
           {known.map((p) => (
-            <circle key={p.mark} cx={p.x} cy={yOf(p.value)} r={p.mark === hour ? 5.5 : 3.5} fill={grade(p.value).color} stroke="#fff" strokeWidth="1.5" />
+            <circle key={p.mark} cx={p.x} cy={yOf(p.value)} r={p.mark === hour ? 5.5 : 3.5} fill={restGrade(p.value).color} stroke="#fff" strokeWidth="1.5" />
           ))}
         </svg>
         <div className="hour-marks">
           {points.map((p) => (
             <button key={p.mark} className={p.mark === hour ? "on" : ""} aria-pressed={p.mark === hour} onClick={() => onHour(p.mark)} style={{ left: `${(p.x / GRAPH.w) * 100}%`, width: `${(step / GRAPH.w) * 100}%` }}>
               <span>{p.mark}시</span>
-              <b style={{ color: p.value === null ? undefined : grade(p.value).color }}>{p.value ?? "-"}</b>
+              <b style={{ color: p.value === null ? undefined : restGrade(p.value).color }}>{p.value ?? "-"}</b>
             </button>
           ))}
         </div>

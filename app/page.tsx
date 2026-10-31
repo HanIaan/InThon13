@@ -44,6 +44,9 @@ import {
 import {
   burdenAt,
   grade,
+  homeColor,
+  restColor,
+  restGrade,
   hourLabel,
   level,
   restScore,
@@ -494,7 +497,7 @@ export default function Home() {
   const restNow = details?.[slot]?.comfort_score;
   const restValue = API_BASE ? (restNow == null ? null : Math.round(restNow)) : burden ? restScore(burden, sensitivity) : null;
   const score = target ? (isHome ? total : restValue) : null;
-  const scoreGrade = grade(score ?? 0);
+  const scoreGrade = isHome ? grade(score ?? 0) : restGrade(score ?? 0);
   const pending = API_BASE && !details;
   const label = score === null ? (isHome || pending ? "계산 중" : "데이터 없음") : isHome ? homeVerdict(score) : scoreGrade.label;
   const detail = details?.night;
@@ -544,16 +547,17 @@ export default function Home() {
   );
   const sliders = <SensitivitySliders value={sensitivity} isHome={isHome} lightOff={lightOff} onChange={setSensitivity} />;
   const sheetScore = { value: score, label, color: scoreGrade.color };
-  const scoreTitle = isHome ? "내 감각 종합 점수" : `${hourLabel(hour)} 내 감각 쉼 지수`;
+  const scoreTitle = isHome ? "내 감각 종합 점수" : `${hourLabel(hour)} 내 감각 종합 점수`;
 
   return (
     <>
-      <div className={`map-layer ${up ? "sheet-up" : ""}`}>
+      <div className={`map-layer ${isHome ? "" : "rest-map"} ${up ? "sheet-up" : ""}`}>
         <RestMap
           cells={heatCells}
           cellSize={detailed ? CELL_SIZE : OVERVIEW_SIZE}
           scores={scores}
           features={live ? grid!.features : null}
+          heatColor={isHome ? homeColor : restColor}
           pinPoint={isHome ? null : point}
           myPoint={myPoint}
           sheetUp={up}
