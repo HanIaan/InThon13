@@ -168,3 +168,8 @@ class DataProvider(Protocol):
 
     def has_poi(self) -> bool:
         ...
+
+    # Optional (checked with getattr):
+    #   covers(grid_id) -> bool : False if the cell is outside the provider's service area
+    #                             (e.g. inside SEOUL_BBOX but outside the Seoul boundary) -> 404.
+    #   warm() -> None          : load datasets ahead of the first request (called at startup).

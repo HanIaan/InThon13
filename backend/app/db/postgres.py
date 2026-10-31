@@ -14,7 +14,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from pydantic import TypeAdapter
 
-from app.contracts.constants import GRID_CELL_SIZE_M, GRID_ORIGIN_X, GRID_ORIGIN_Y, TimeSlot
+from app.contracts.constants import GRID_CELL_SIZE_M, GRID_ORIGIN_X, GRID_ORIGIN_Y, DataStatus, SourceId, TimeSlot
 from app.contracts.data_interfaces import CellIndicators, IndicatorValue
 from app.db.snapshot import Snapshot, FORMAT_VERSION, SOURCE_ADAPTER, EVIDENCE_ADAPTER
 
@@ -99,22 +99,43 @@ def publish_on_connection(conn, snapshot, data):
     conn.execute("INSERT INTO public.engine_dataset (format_version) VALUES (%s)", (FORMAT_VERSION,))
 
 
-def read_database_snapshot(database_url):
+def read_database_snapshot(database_url, *, lean=False):
     with connect(database_url) as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        return read_on_connection(conn)
+        return read_on_connection(conn, lean=lean)
 
 
-def read_on_connection(conn):
+# Lean (API serving) read. LiveProvider re-ranks evidence at the click for every S-DoT
+# indicator and for light (S-DoT lux), so that stored per-cell evidence is never served;
+# skipping it removes most of the transferred bytes. Grid geometry is likewise rebuilt
+# from grid IDs, so it is not fetched. Rows are built without per-row pydantic validation.
+LEAN_CELL_SQL = """SELECT grid_id,time_slot,indicator,raw_value,raw_unit,status,confidence,method,source,
+       observed_at,period_start,period_end,
+       CASE WHEN source = 'sdot' OR indicator = 'light' THEN NULL ELSE evidence END AS evidence, note
+  FROM public.cell_indicators"""
+FULL_CELL_SQL = "SELECT * FROM public.cell_indicators ORDER BY grid_id,time_slot,indicator"
+
+
+def _lean_value(row):
+    source = row["source"]
+    return IndicatorValue(
+        raw_value=row["raw_value"], raw_unit=row["raw_unit"], status=DataStatus(row["status"]),
+        confidence=float(row["confidence"]), source=SourceId(source) if source else None, method=row["method"],
+        observed_at=row["observed_at"], period_start=row["period_start"], period_end=row["period_end"],
+        evidence=[EVIDENCE_ADAPTER.validate_python(e) for e in row["evidence"] or []], note=row["note"])
+
+
+def read_on_connection(conn, *, lean=False):
     manifest = conn.execute("SELECT format_version FROM public.engine_dataset WHERE singleton").fetchone()
     if not manifest or manifest["format_version"] != FORMAT_VERSION:
         raise ValueError("precomputed dataset is unavailable or incompatible")
     grouped = {}
-    for row in conn.execute("SELECT * FROM public.cell_indicators ORDER BY grid_id,time_slot,indicator"):
+    for row in conn.execute(LEAN_CELL_SQL if lean else FULL_CELL_SQL):
         gid, slot, indicator = row.pop("grid_id"), row.pop("time_slot"), row.pop("indicator")
-        grouped.setdefault((gid, slot), {})[indicator] = VALUE_ADAPTER.validate_python(row)
+        grouped.setdefault((gid, slot), {})[indicator] = _lean_value(row) if lean else VALUE_ADAPTER.validate_python(row)
     cells = [CellIndicators(gid, TimeSlot(slot), **values) for (gid, slot), values in grouped.items()]
-    grids = list(conn.execute("SELECT grid_id,ix,iy,ST_AsGeoJSON(geom)::jsonb AS geometry FROM public.grid_cells"))
+    grids = list(conn.execute("SELECT grid_id,ix,iy FROM public.grid_cells" if lean else
+                              "SELECT grid_id,ix,iy,ST_AsGeoJSON(geom)::jsonb AS geometry FROM public.grid_cells"))
     sources = [SOURCE_ADAPTER.validate_python(row) for row in conn.execute("SELECT * FROM public.source_metadata")]
     sensors = {}
     for row in conn.execute("SELECT * FROM public.sensor_summaries"):

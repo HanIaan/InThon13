@@ -146,9 +146,9 @@ def test_grid_recommendations_and_missing(live):
     assert response.status_code == 200 and len(response.json()["features"]) == 8
     recommended = client.get("/api/v1/recommendations", params={"bbox": bbox, "time_slot": "night", "mode": "rest"}).json()
     assert recommended["items"] and recommended["meta"]["poi_available"] is False
-    missing = inspect(client, IX+9, "day").json()
-    assert missing["comfort_score"] is None and missing["data_status"] == "missing"
-    assert missing["indicators"]["light"]["status"] == "not_applicable"
+    # Inside SEOUL_BBOX but not a precomputed (boundary-intersecting) cell -> 404.
+    outside = inspect(client, IX+9, "day")
+    assert outside.status_code == 404 and outside.json()["error"]["code"] == "out_of_coverage"
 
 
 def test_unprepared_returns_503_but_health_is_readable(tmp_path):
