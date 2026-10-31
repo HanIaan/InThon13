@@ -62,16 +62,8 @@ def test_daytime_not_applicable_light_consistency(client):
     assert light["note"] is not None and "낮" in light["note"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: in /location/inspect, indicators return source_name without '(mock)' suffix when status is mock",
-)
 def test_mock_indicator_source_name_indicates_mock(client):
-    """When data_status is 'mock', source_name should explicitly denote mock data (e.g. '서울 S-DoT 도시데이터 센서 (mock)').
-
-    Currently, query_service.py uses a static SOURCE_NAMES dictionary that omits '(mock)',
-    unlike /data/status which correctly reports '(mock)'.
-    """
+    """When data_status is 'mock', source_name should explicitly denote mock data (e.g. '서울 S-DoT 도시데이터 센서 (mock)')."""
     res = client.get(
         "/api/v1/location/inspect",
         params={"lat": 37.5665, "lng": 126.9780, "time_slot": "night"},
