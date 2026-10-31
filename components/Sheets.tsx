@@ -23,108 +23,74 @@ export function GlassSheets({ isHome, children }: { isHome: boolean; children: R
   );
 }
 
-export function PlaceSheet({
+export function MainSheet({
   target,
+  scoreTitle,
   score,
+  secondary,
+  cause,
   up,
   emptyValues,
-  children,
+  left,
+  side,
 }: {
   target: SheetTarget;
+  scoreTitle: string;
   score: SheetScore;
+  secondary?: { label: string; value: number | null };
+  cause?: string;
   up: boolean;
   emptyValues: string[];
-  children?: ReactNode;
+  left: ReactNode;
+  side: ReactNode;
 }) {
   const open = () => document.querySelector(".sheet")?.scrollIntoView({ behavior: "smooth" });
   const search = encodeURIComponent(target.title);
   const facts = target.facts.filter((fact) => fact.value);
   return (
-    <section className="sheet place">
+    <section className="sheet">
       <button className={`peek ${up ? "hidden" : ""}`} onClick={open}>
         <span>{target.title}</span>
         <strong>{score.value ?? "-"}</strong>
         <em style={{ color: score.color }}>{score.label}</em>
       </button>
-      <div className={`place-grid solid ${children ? "with-inputs" : ""}`}>
-        <div className="module place-info">
-          <p className="where">{target.line}</p>
-          <h1>{target.title}</h1>
-          {facts.length > 0 ? (
-            <dl>
-              {facts.map((fact) => (
-                <div key={fact.label}>
-                  <dt>{fact.label}</dt>
-                  <dd className={emptyValues.includes(fact.value) ? "empty" : ""}>{fact.value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
-            <p className="no-facts">등록된 주소와 운영 정보가 없어요. 아래 지도에서 확인해 보세요.</p>
-          )}
-          <div className="links">
-            {target.website && <a href={target.website} target="_blank" rel="noreferrer">웹사이트</a>}
-            <a href={`https://map.naver.com/p/search/${search}`} target="_blank" rel="noreferrer">네이버 지도</a>
-            <a href={`https://map.kakao.com/?q=${search}`} target="_blank" rel="noreferrer">카카오맵</a>
-          </div>
-          <p className="hint">OpenStreetMap 기준이며 실제와 다를 수 있어요.</p>
-        </div>
-        {children && <div className="place-side">{children}</div>}
-      </div>
-    </section>
-  );
-}
-
-export function ScoreSheet({
-  heading,
-  subtitle,
-  score,
-  secondary,
-  sliders,
-  story,
-  extra,
-  side,
-}: {
-  heading: string;
-  subtitle?: string;
-  score: SheetScore;
-  secondary?: { label: string; value: number | null };
-  sliders: ReactNode;
-  story: ReactNode;
-  extra?: ReactNode;
-  side: ReactNode;
-}) {
-  return (
-    <section className="sheet">
       <div className="sheet-grid">
-        <div className="module score-module">
-          <p className="where">{heading}</p>
-          {subtitle && <p className="where">{subtitle}</p>}
-          <p className="score">{score.value ?? "-"}</p>
-          <p className="verdict" style={{ color: score.color }}>{score.label}</p>
-          {secondary && <p className="secondary">{secondary.label} <b>{secondary.value ?? "-"}</b></p>}
-        </div>
-        <div className="module tune-module">
-          <h2>내 감각</h2>
-          {sliders}
+        <div className="module story">
+          <div className="place-head">
+            <p className="where">{target.line}</p>
+            <h1>{target.title}</h1>
+            {facts.length > 0 ? (
+              <dl className="facts">
+                {facts.map((fact) => (
+                  <div key={fact.label}>
+                    <dt>{fact.label}</dt>
+                    <dd className={emptyValues.includes(fact.value) ? "empty" : ""}>{fact.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="no-facts">등록된 정보 없음</p>
+            )}
+            <div className="links">
+              {target.website && <a href={target.website} target="_blank" rel="noreferrer">웹사이트</a>}
+              <a href={`https://map.naver.com/p/search/${search}`} target="_blank" rel="noreferrer">네이버 지도</a>
+              <a href={`https://map.kakao.com/?q=${search}`} target="_blank" rel="noreferrer">카카오맵</a>
+            </div>
+          </div>
+          <div className="score-block">
+            <p className="where">{scoreTitle}</p>
+            <p className="score">{score.value ?? "-"}</p>
+            <p className="verdict" style={{ color: score.color }}>{score.label}</p>
+            {secondary && <p className="secondary">{secondary.label} <b>{secondary.value ?? "-"}</b></p>}
+            {cause && <p className="cause">{cause}</p>}
+          </div>
+          {left}
         </div>
         <div className="opening-slot">
           <div className="opening" aria-hidden="true" />
         </div>
-        <div className="module story">
-          <div className="story-main">{story}</div>
-          {extra}
-        </div>
         <div className="module side">{side}</div>
       </div>
-    </section>
-  );
-}
-
-export function ReportSheet({ children }: { children: ReactNode }) {
-  return (
-    <section className="sheet report">
-      <div className="report-grid module">{children}</div>
     </section>
   );
 }

@@ -89,7 +89,7 @@ export function Dock({
   return (
     <div className="dock">
       {showControls && (isHome ? (
-        <p className="slots basis glass">건물을 눌러 선택 · 밤·새벽 평균</p>
+        <p className="slots basis glass">건물을 눌러 선택</p>
       ) : (
         <label className="time glass">
           <span>{hourLabel(hour)}</span>

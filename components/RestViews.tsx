@@ -68,7 +68,6 @@ export function SpotsPanel({
         })}
       </ol>
       {spots.length === 0 && <p className="hint">주변에 추천할 장소가 없어요.</p>}
-      <p className="hint">지도에서 원하는 위치를 눌러도 볼 수 있어요.</p>
     </aside>
   );
 }

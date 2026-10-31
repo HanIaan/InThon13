@@ -109,25 +109,16 @@ export function sleepBlocker(burden: Burden, sensitivity: Sensitivity): string {
   return `내 기준에서는 ${SUBJECT[top]} 잠을 가장 방해할 수 있어요.`;
 }
 
-const CHECKS: Record<Sense, string> = {
-  sound: "밤에 창문을 열고 큰길과 골목 소리를 들어 보세요.",
-  light: "해가 진 뒤 창밖 간판과 가로등 빛을 확인하세요.",
-  crowd: "저녁 시간 건물 앞 유동인구를 살펴보세요.",
-};
-
-// 내 민감도와 부담이 큰 감각부터 확인하도록 정렬한다.
-export function visitChecklist(burden: Burden, sensitivity: Sensitivity): string[] {
-  return (Object.keys(CHECKS) as Sense[])
-    .sort((a, b) => burden[b] * sensitivity[b] - burden[a] * sensitivity[a])
-    .map((s) => CHECKS[s]);
-}
-
 const SUBJECT: Record<Sense, string> = { sound: "소리가", light: "빛이", crowd: "혼잡이" };
 
-export function explain(burden: Burden, sensitivity: Sensitivity, score: number): string {
-  const top = (Object.keys(burden) as Sense[]).sort(
+export function topSense(burden: Burden, sensitivity: Sensitivity): Sense {
+  return (Object.keys(burden) as Sense[]).sort(
     (a, b) => burden[b] * sensitivity[b] - burden[a] * sensitivity[a],
   )[0];
+}
+
+export function explain(burden: Burden, sensitivity: Sensitivity, score: number): string {
+  const top = topSense(burden, sensitivity);
   if (score >= 65) return `내 감각 기준으로 쉬기 좋은 편이에요. ${SUBJECT[top]} 가장 큰 변수예요.`;
   return ADVICE[top];
 }

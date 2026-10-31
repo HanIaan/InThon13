@@ -14,7 +14,6 @@ type Props = {
   scores: Map<string, number>;
   features: GridFeature[] | null;
   pinPoint: Point | null;
-  focus: boolean;
   focusPoint: Point | null;
   spots: Recommendation[];
   activeSpot: string | null;
@@ -76,26 +75,25 @@ function featureImage(features: GridFeature[]) {
   return canvas.toDataURL();
 }
 
-const FOCUS_ZOOM = 16.5;
+const REST_ZOOM = 15.5;
 const HOME_ZOOM = 16;
 
-// 유리판이 여러 장이므로 지금 화면에 가장 많이 보이는 창을 기준으로 삼는다.
-function visibleOpening() {
-  const visible = (rect: DOMRect) =>
-    Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
-  return [...document.querySelectorAll(".opening")]
-    .map((el) => el.getBoundingClientRect())
-    .sort((a, b) => visible(b) - visible(a))[0];
+// 유리판을 끝까지 올렸을 때의 창 위치를 계산해, 스크롤해도 지도가 움직이지 않게 미리 맞춘다.
+function openingCenter(instance: L.Map) {
+  const size = instance.getSize();
+  const opening = document.querySelector(".opening");
+  const sheet = opening?.closest(".sheet");
+  if (!opening || !sheet) return L.point(0, 0);
+  const box = opening.getBoundingClientRect();
+  const offset = box.top - sheet.getBoundingClientRect().top;
+  return L.point(box.left + box.width / 2 - size.x / 2, offset + box.height / 2 - size.y / 2);
 }
 
-function centerInOpening(instance: L.Map, point: Point) {
-  const box = visibleOpening();
-  const size = instance.getSize();
-  const shift = box
-    ? L.point(box.left + box.width / 2 - size.x / 2, box.top + box.height / 2 - size.y / 2)
-    : L.point(0, 0);
-  const target = instance.unproject(instance.project([point.lat, point.lng], FOCUS_ZOOM).subtract(shift), FOCUS_ZOOM);
-  instance.flyTo(target, FOCUS_ZOOM, { duration: 0.7 });
+function placeOnMap(instance: L.Map, point: Point, zoom: number, animate: boolean) {
+  const shift = openingCenter(instance);
+  const target = instance.unproject(instance.project([point.lat, point.lng], zoom).subtract(shift), zoom);
+  if (animate) instance.flyTo(target, zoom, { duration: 0.6 });
+  else instance.setView(target, zoom, { animate: false });
 }
 
 export default function RestMap({
@@ -103,7 +101,6 @@ export default function RestMap({
   scores,
   features,
   pinPoint,
-  focus,
   focusPoint,
   spots,
   activeSpot,
@@ -119,8 +116,7 @@ export default function RestMap({
   const pins = useRef<L.LayerGroup | null>(null);
   const buildings = useRef<L.LayerGroup | null>(null);
   const outline = useRef<L.Polygon | null>(null);
-  const zoomedIn = useRef(false);
-  const viewingHomes = useRef(false);
+  const placed = useRef(false);
   const choosePoint = useRef(onPoint);
   choosePoint.current = onPoint;
   const chooseSpot = useRef(onSpot);
@@ -134,6 +130,8 @@ export default function RestMap({
       zoomSnap: 0.25,
       zoomControl: false,
       scrollWheelZoom: false,
+      // 휴대폰에서는 한 손가락으로 민 동작이 지도 이동이 아니라 페이지 스크롤이 되게 한다.
+      dragging: !L.Browser.mobile,
       attributionControl: true,
     });
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -182,15 +180,7 @@ export default function RestMap({
     const layer = buildings.current;
     if (!layer) return;
     layer.clearLayers();
-    const instance = map.current;
-    if (!homes) {
-      if (instance && viewingHomes.current) instance.flyToBounds(MAP_BOUNDS, { duration: 0.6 });
-      viewingHomes.current = false;
-      return;
-    }
-    // 건물을 누를 수 있도록 주거 탭에 들어오면 확대한다.
-    if (instance && activeHome) instance.flyTo([activeHome.lat, activeHome.lng], HOME_ZOOM, { duration: 0.6 });
-    viewingHomes.current = true;
+    if (!homes) return;
     const renderer = L.canvas();
     for (const home of homes) {
       L.polygon(home.ring, {
@@ -249,34 +239,15 @@ export default function RestMap({
       interactive: false,
       pane: "markerPane",
     }).addTo(instance);
-    if (!focus) instance.panInside([pinPoint.lat, pinPoint.lng], { padding: [120, 150] });
-  }, [pinPoint, focus]);
+  }, [pinPoint]);
 
-  // 정보 시트를 올리면 가운데 창에 선택 위치가 오도록 확대한다.
+  // 지도는 선택이 바뀔 때만 움직이고, 스크롤에는 반응하지 않는다.
   useEffect(() => {
     const instance = map.current;
-    if (!instance) return;
-    if (focus && focusPoint) {
-      const center = () => centerInOpening(instance, focusPoint);
-      center();
-      zoomedIn.current = true;
-      // 스크롤이 멈추면 창의 위치가 바뀌었을 수 있으므로 다시 맞춘다.
-      let timer = 0;
-      const onScroll = () => {
-        window.clearTimeout(timer);
-        timer = window.setTimeout(center, 160);
-      };
-      window.addEventListener("scroll", onScroll, { passive: true });
-      return () => {
-        window.clearTimeout(timer);
-        window.removeEventListener("scroll", onScroll);
-      };
-    } else if (!focus && zoomedIn.current) {
-      if (homes && activeHome) instance.flyTo([activeHome.lat, activeHome.lng], HOME_ZOOM, { duration: 0.7 });
-      else instance.flyToBounds(MAP_BOUNDS, { duration: 0.7 });
-      zoomedIn.current = false;
-    }
-  }, [focus, focusPoint?.lat, focusPoint?.lng]);
+    if (!instance || !focusPoint) return;
+    placeOnMap(instance, focusPoint, homes ? HOME_ZOOM : REST_ZOOM, placed.current);
+    placed.current = true;
+  }, [focusPoint?.lat, focusPoint?.lng, homes]);
 
   return <div ref={host} className="map" aria-label="안암동 쉼 지수 지도" />;
 }

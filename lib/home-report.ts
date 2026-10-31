@@ -65,10 +65,13 @@ export function adjustedLight(light: number, input: HomeInput, lat: number, lng:
   return Math.round(light * (1 - STREET_LIGHT_SHARE + STREET_LIGHT_SHARE * factor));
 }
 
-// 기획서 6-4: 빛에 예민하면 빛 비중을 0.5로 올린다.
+// 기획서 6-4의 소음 0.65, 빛 0.35 비중에 내 감각을 곱한다. 민감도 3이면 기획서 공식과 같다.
+const NEUTRAL_SENSITIVITY = 3;
+
 export function sleepScore(noiseNight: number, light: number, sensitivity: Sensitivity) {
-  const lightShare = sensitivity.light >= 4 ? 0.5 : 0.35;
-  return Math.round(100 - ((1 - lightShare) * noiseNight + lightShare * light));
+  const noiseLoad = 0.65 * noiseNight * (sensitivity.sound / NEUTRAL_SENSITIVITY);
+  const lightLoad = 0.35 * light * (sensitivity.light / NEUTRAL_SENSITIVITY);
+  return Math.round(Math.max(0, Math.min(100, 100 - noiseLoad - lightLoad)));
 }
 
 export function daylightScore(winterMinutes: number) {
@@ -166,10 +169,4 @@ export function nearestSensor(lat: number, lng: number): SensorCard | null {
     if (!best || distance < best.distance) best = { distance, hourly: sensor.hourly };
   }
   return best;
-}
-
-export function lightAdvice(light: number, sensitivity: Sensitivity) {
-  if (light >= 70) return sensitivity.light >= 4 ? "빛에 예민하다면 암막커튼이 꼭 필요해요." : "밤에 창밖이 밝은 편이라 암막커튼을 권해요.";
-  if (light >= 45) return "밤에 창밖 불빛이 보일 수 있어요.";
-  return "밤에 비교적 어두운 편이에요.";
 }

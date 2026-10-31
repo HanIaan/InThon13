@@ -1,16 +1,6 @@
 "use client";
 
-import type { Home } from "@/lib/data";
 import { DIRECTIONS, formatDuration, type Direction, type HomeInput, type SensorCard, type SunReport } from "@/lib/home-report";
-
-export type RankedHome = {
-  item: Home;
-  input: HomeInput;
-  sleep: number | null;
-  daylight: number | null;
-  noise: string;
-  light: number;
-};
 
 export function HomeInputs({
   input,
@@ -53,60 +43,76 @@ export function HomeInputs({
   );
 }
 
+// 집마다 같은 눈금으로 그려야 조용한 곳의 작은 차이가 커 보이지 않는다.
+const CHART_MIN_DB = 30;
+const CHART_MAX_DB = 70;
+
+function chartHeight(db: number | null) {
+  if (db === null) return 0;
+  return Math.max(4, Math.min(100, ((db - CHART_MIN_DB) / (CHART_MAX_DB - CHART_MIN_DB)) * 100));
+}
+
+export function ModeSwitch<T extends string>({
+  options,
+  value,
+  label,
+  onChange,
+}: {
+  options: { id: T; label: string }[];
+  value: T;
+  label: string;
+  onChange: (next: T) => void;
+}) {
+  return (
+    <div className="mode-switch" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          className={option.id === value ? "on" : ""}
+          aria-pressed={option.id === value}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function NoiseCard({
-  day,
-  evening,
-  night,
+  slot,
+  noise,
+  crowd,
   sensor,
 }: {
-  day: number;
-  evening: number;
-  night: number;
+  slot: string;
+  noise: number;
+  crowd: string;
   sensor: SensorCard | null;
 }) {
-  const values = sensor?.hourly.filter((v): v is number => v !== null) ?? [];
-  const low = values.length ? Math.min(...values) : 0;
-  const high = values.length ? Math.max(...values) : 1;
   return (
     <div className="report-card">
       <h2>소음</h2>
-      <dl className="levels">
-        <div><dt>낮</dt><dd>약 {day}dB</dd></div>
-        <div><dt>저녁</dt><dd>약 {evening}dB</dd></div>
-        <div><dt>심야</dt><dd>약 {night}dB</dd></div>
-      </dl>
+      <p className="card-value">약 {noise}dB<small>{slot} · 혼잡 {crowd}</small></p>
       {sensor && (
-        <>
-          <div className="sensor-chart" role="img" aria-label="가까운 센서의 24시간 소음">
-            {sensor.hourly.map((value, hour) => (
-              <i key={hour} style={{ height: value === null ? "3%" : `${15 + ((value - low) / (high - low || 1)) * 85}%` }} />
-            ))}
+        <div className="sensor">
+          <div className="sensor-chart" role="img" aria-label={`가까운 센서의 24시간 소음, ${CHART_MIN_DB}~${CHART_MAX_DB}dB 눈금`}>
+            {sensor.hourly.map((value, hour) => <i key={hour} style={{ height: `${chartHeight(value)}%` }} />)}
           </div>
-          <p className="data-note">가까운 S-DoT {sensor.distance}m · 24시간 실측 중앙값 (0~23시)</p>
-        </>
+          <p className="sun-axis"><span>0시</span><span>12시</span><span>23시</span></p>
+          <p className="data-note">가까운 센서 실측 · {CHART_MIN_DB}~{CHART_MAX_DB}dB</p>
+        </div>
       )}
     </div>
   );
 }
 
-export function LightCard({
-  level,
-  score,
-  advice,
-  floor,
-}: {
-  level: string;
-  score: number;
-  advice: string;
-  floor: number;
-}) {
+export function LightCard({ level, score }: { level: string; score: number }) {
   return (
     <div className="report-card">
       <h2>빛공해</h2>
-      <p className="card-value">{level}<small>심야 {score}점 · {floor}층 기준</small></p>
+      <p className="card-value">{level}<small>심야 부담 {score}</small></p>
       <div className="night-window" aria-hidden="true"><i style={{ opacity: Math.min(1, score / 100) }} /></div>
-      <p className="note">{advice}</p>
-      <p className="data-note">위성·상가 기반 추정이며 창문의 실제 lux가 아니에요.</p>
     </div>
   );
 }
@@ -116,15 +122,11 @@ function SunRow({ label, minutes }: { label: string; minutes: number }) {
 }
 
 export function SunCard({ report }: { report: SunReport | null }) {
-  if (!report) return <div className="report-card"><h2>일조량</h2><p className="note">건물 데이터를 계산하는 중이에요.</p></div>;
+  if (!report) return <div className="report-card"><h2>일조량</h2><p className="note">계산 중</p></div>;
   const { winter } = report;
   return (
     <div className="report-card">
-      <h2>일조량</h2>
-      <p className="card-value">
-        {formatDuration(winter.minutes)}
-        <small>동지 직사광{winter.minutes ? ` · ${winter.start}–${winter.end}` : ""}</small>
-      </p>
+      <h2>일조량 {winter.minutes ? `${winter.start}–${winter.end}` : "직사광 없음"}</h2>
       <div className="sun-line" role="img" aria-label="동지 하루 직사광 시간대">
         {winter.slots.filter((_, i) => i >= 36 && i < 108).map((lit, i) => <i key={i} className={lit ? "lit" : ""} />)}
       </div>
@@ -133,75 +135,6 @@ export function SunCard({ report }: { report: SunReport | null }) {
         <SunRow label="춘분" minutes={report.spring.minutes} />
         <SunRow label="하지" minutes={report.summer.minutes} />
       </dl>
-      <p className="data-note">주변 건물만 반영한 추정이에요. 층수 정보가 없는 건물 {report.missingLevels}%는 3층으로 계산했어요.</p>
-    </div>
-  );
-}
-
-export function VisitChecklist({
-  homeId,
-  items,
-  checked,
-  onToggle,
-}: {
-  homeId: string;
-  items: string[];
-  checked: string[];
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <div className="checks">
-      <h2>집 보러 갈 때</h2>
-      {items.map((item) => {
-        const key = `${homeId}:${item}`;
-        return (
-          <label key={item}>
-            <input type="checkbox" checked={checked.includes(key)} onChange={() => onToggle(key)} />
-            <span>{item}</span>
-          </label>
-        );
-      })}
-    </div>
-  );
-}
-
-export function HomeCompare({
-  ranked,
-  isSaved,
-  onToggleSaved,
-  onSelect,
-}: {
-  ranked: RankedHome[];
-  isSaved: boolean;
-  onToggleSaved: () => void;
-  onSelect: (item: RankedHome) => void;
-}) {
-  return (
-    <div className="compare-card">
-      <div className="row">
-        <h2>집 비교</h2>
-        <button onClick={onToggleSaved}>{isSaved ? "빼기" : "담기"}</button>
-      </div>
-      {ranked.length > 0 ? (
-        <table>
-          <thead>
-            <tr><th>집</th><th>수면</th><th>햇빛</th><th>심야 소음</th><th>빛</th></tr>
-          </thead>
-          <tbody>
-            {ranked.map((row) => (
-              <tr key={row.item.id} onClick={() => onSelect(row)}>
-                <td>{row.item.name ?? row.item.type}<small>{row.input.floor}층</small></td>
-                <td>{row.sleep ?? "-"}</td>
-                <td>{row.daylight ?? "-"}</td>
-                <td>{row.noise}</td>
-                <td>{row.light}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="hint">최대 3곳을 담아 비교할 수 있어요.</p>
-      )}
     </div>
   );
 }

@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Dock, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
-import { HomeCompare, HomeInputs, LightCard, NoiseCard, SunCard, VisitChecklist, type RankedHome } from "@/components/HomeViews";
+import { HomeInputs, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
-import { GlassSheets, PlaceSheet, ReportSheet, ScoreSheet } from "@/components/Sheets";
+import { GlassSheets, MainSheet } from "@/components/Sheets";
 import {
   adjustedLight,
   daylightScore,
-  lightAdvice,
+  formatDuration,
   nearestSensor,
   sleepScore,
   sleepVerdict,
@@ -32,7 +32,6 @@ import {
   BOUNDS,
   buildGrid,
   cellForHome,
-  distanceMeters,
   homeAtPoint,
   HOMES,
   nearestCell,
@@ -45,20 +44,20 @@ import {
 } from "@/lib/data";
 import {
   burdenAt,
-  explain,
   grade,
   hourLabel,
   level,
   restScore,
   SENSE_LABEL,
-  sleepBlocker,
   slotOf,
   SLOTS,
-  visitChecklist,
+  topSense,
+  type Burden,
   type Sense,
   type Sensitivity,
   type Slot,
 } from "@/lib/rest";
+import { useGlideScroll } from "@/lib/use-glide-scroll";
 
 const RestMap = dynamic(() => import("@/components/RestMap"), { ssr: false });
 
@@ -74,11 +73,9 @@ export default function Home() {
   const [activeSpot, setActiveSpot] = useState<string | null>(null);
   const [home, setHome] = useState<HomePlace>(() => nearestHome(START_POINT.lat, START_POINT.lng));
   const [homeInput, setHomeInput] = useState<HomeInput>({ floor: 3, direction: "south" });
-  const [saved, setSaved] = useState<{ home: HomePlace; input: HomeInput }[]>([]);
   const [buildings, setBuildings] = useState<Building[] | null>(null);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"rest" | "home">("rest");
-  const [checked, setChecked] = useState<string[]>([]);
   const [tuneOpen, setTuneOpen] = useState(true);
   const [up, setUp] = useState(false);
   const [grid, setGrid] = useState<GridResponse | null>(null);
@@ -87,8 +84,10 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [applied, setApplied] = useState(sensitivity);
   const [lookup, setLookup] = useState<{ key: string; address?: string; name?: string } | null>(null);
+  const [view, setView] = useState<"day" | "night">("day");
 
   const isHome = tab === "home";
+  const showDay = isHome && view === "day";
   const slot = slotOf(hour);
   const pointCell = useMemo(
     () => nearestToPoint(cells, point.lat, point.lng, 3) ?? nearestCell(cells, "안암동 주택가")!,
@@ -115,27 +114,15 @@ export default function Home() {
   );
   const active = picked ? undefined : spots.find((s) => s.spot.id === activeSpot) ?? spots[0];
 
+  useGlideScroll();
+
   useEffect(() => {
     history.scrollRestoration = "manual";
     window.scrollTo({ top: 0, behavior: "instant" });
+    requestAnimationFrame(() => document.documentElement.classList.add("snapping"));
     setHour(new Date().getHours());
     if (window.innerWidth <= 860) setTuneOpen(false);
-    try {
-      const stored: { id: string; input: HomeInput }[] = JSON.parse(localStorage.getItem("saved-home-inputs") ?? "[]");
-      setSaved(
-        stored.flatMap(({ id, input }) => {
-          const found = HOMES.find((h) => h.id === id);
-          return found ? [{ home: found, input }] : [];
-        }),
-      );
-    } catch {}
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("saved-home-inputs", JSON.stringify(saved.map((s) => ({ id: s.home.id, input: s.input }))));
-    } catch {}
-  }, [saved]);
 
   // 슬라이더를 움직이는 동안에는 호출하지 않고 300ms 뒤에 반영한다.
   useEffect(() => {
@@ -269,18 +256,6 @@ export default function Home() {
     setPicked(false);
   }
 
-  function toggleCheck(key: string) {
-    setChecked(checked.includes(key) ? checked.filter((k) => k !== key) : [...checked, key]);
-  }
-
-  function toggleSaved() {
-    setSaved(
-      saved.some((s) => s.home.id === home.id)
-        ? saved.filter((s) => s.home.id !== home.id)
-        : [...saved, { home, input: homeInput }].slice(-3),
-    );
-  }
-
   function chooseHome(next: HomePlace) {
     setHome(next);
     const levels = Number(next.levels) || 0;
@@ -325,7 +300,6 @@ export default function Home() {
           facts: [
             { label: "주소", value: active.spot.address ?? missing },
             { label: "운영 시간", value: active.spot.hours ?? missing },
-            { label: "전화", value: active.spot.phone ?? missing },
           ],
           website: active.spot.website,
           lat: active.spot.lat,
@@ -338,7 +312,6 @@ export default function Home() {
             cell: pointCell,
             facts: [
               { label: "주소", value: foundAddress },
-              { label: "가까운 추천", value: spots[0] ? `${spots[0].spot.name} · ${distanceMeters(point, spots[0].spot)}m` : missing },
             ],
             website: undefined,
             lat: point.lat,
@@ -356,22 +329,7 @@ export default function Home() {
   const score = target ? (isHome ? apiNight ?? homeResult.sleep : restScore(burden!, sensitivity)) : null;
   const scoreGrade = grade(score ?? 0);
   const label = score === null ? "데이터 없음" : isHome ? sleepVerdict(score) : scoreGrade.label;
-  const isSaved = saved.some((s) => s.home.id === home.id);
   const detail = details?.night;
-  const ranked: RankedHome[] = saved
-    .map(({ home: item, input }) => {
-      const result = sleepOf(item, input);
-      const sun = buildings ? sunReport(item, input, buildings) : null;
-      return {
-        item,
-        input,
-        sleep: result.sleep,
-        daylight: sun ? daylightScore(sun.winter.minutes) : null,
-        noise: `${result.cell.noiseDb.night}dB`,
-        light: result.light,
-      };
-    })
-    .sort((a, b) => (b.sleep ?? -1) - (a.sleep ?? -1));
   const levelOf = (sense: Sense) => {
     if (!target || !burden) return "-";
     if (!isHome) {
@@ -383,10 +341,14 @@ export default function Home() {
     return indicatorText(detail?.indicators?.[key]) ?? level(target.cell.burdens.night[sense]);
   };
 
-  const confidenceLabel = (value: number) => (value >= 0.7 ? "높음" : value >= 0.5 ? "보통" : "낮음");
-
   const sliders = <SensitivitySliders value={sensitivity} lightOff={lightOff} onChange={setSensitivity} />;
   const sheetScore = { value: score, label, color: scoreGrade.color };
+  const sunScore = report
+    ? { value: daylightScore(report.winter.minutes), label: `동지 직사광 ${formatDuration(report.winter.minutes)}`, color: "var(--ink)" }
+    : { value: null, label: "계산 중", color: "var(--muted)" };
+  const scoreTitle = isHome ? "내 감각 수면 점수" : `${hourLabel(hour)} 내 감각 쉼 지수`;
+  const causeBurden = isHome ? { ...target?.cell.burdens.night, crowd: 0 } : { ...burden, light: lightOff ? 0 : burden?.light };
+  const cause = target ? `가장 큰 부담 ${SENSE_LABEL[topSense(causeBurden as Burden, sensitivity)]}` : "";
 
   return (
     <>
@@ -396,7 +358,6 @@ export default function Home() {
           scores={scores}
           features={live ? grid!.features : null}
           pinPoint={isHome ? null : point}
-          focus={up}
           focusPoint={target ? { lat: target.lat, lng: target.lng } : null}
           spots={spots}
           activeSpot={active?.spot.id ?? null}
@@ -434,82 +395,63 @@ export default function Home() {
 
       {target && (
         <GlassSheets isHome={isHome}>
-          <PlaceSheet target={target} score={sheetScore} up={up} emptyValues={[looking]}>
-            {isHome && (
-              <HomeInputs
-                input={homeInput}
-                maxFloor={Number(home.levels) || 30}
-                onChange={setHomeInput}
-              />
-            )}
-          </PlaceSheet>
-          <ScoreSheet
-            heading={target.title}
-            subtitle={isHome ? "수면 환경 점수" : hourLabel(hour)}
-            score={sheetScore}
-            secondary={isHome ? { label: "낮 햇빛 점수", value: report ? daylightScore(report.winter.minutes) : null } : undefined}
-            sliders={sliders}
-            story={
+          <MainSheet
+            target={target}
+            scoreTitle={showDay ? "낮 햇빛 점수" : scoreTitle}
+            score={showDay ? sunScore : sheetScore}
+            secondary={isHome ? (showDay ? { label: "내 감각 수면 점수", value: score } : { label: "낮 햇빛 점수", value: sunScore.value }) : undefined}
+            cause={showDay ? undefined : cause}
+            up={up}
+            emptyValues={[looking]}
+            left={
+              <>
+                {isHome && (
+                  <HomeInputs
+                    input={homeInput}
+                    maxFloor={Number(home.levels) || 30}
+                    onChange={setHomeInput}
+                  />
+                )}
+                <div className="sense-tune">
+                  <h2>내 감각</h2>
+                  {sliders}
+                </div>
+              </>
+            }
+            side={
               isHome ? (
-                <NoiseCard
-                  day={target.cell.noiseDb.day}
-                  evening={target.cell.noiseDb.evening}
-                  night={target.cell.noiseDb.night}
-                  sensor={nearestSensor(home.lat, home.lng)}
-                />
+                <>
+                  <ModeSwitch
+                    label="낮과 밤"
+                    options={[{ id: "day", label: "낮" }, { id: "night", label: "밤" }]}
+                    value={view}
+                    onChange={setView}
+                  />
+                  {showDay && <SunCard report={report} />}
+                  <NoiseCard
+                    slot={showDay ? "낮" : "심야"}
+                    noise={target.cell.noiseDb[showDay ? "day" : "night"]}
+                    crowd={level(target.cell.burdens[showDay ? "day" : "night"].crowd)}
+                    sensor={nearestSensor(home.lat, home.lng)}
+                  />
+                  {!showDay && <LightCard level={level(homeResult.light)} score={homeResult.light} />}
+                </>
               ) : (
                 <>
-                  <h2>이 장소의 지금</h2>
-                  <p className="note">{explain(burden!, sensitivity, score ?? 0)}</p>
-                  <p className="data-note">
-                    {target.cell.area} · {target.cell.sensorM === null ? "600m 안에 소음 센서 없음" : `가까운 소음 센서 ${Math.round(target.cell.sensorM)}m`}
-                    {" · "}신뢰도 {confidenceLabel(target.cell.confidence.sound)}
-                  </p>
                   <dl className="levels">
                     {SENSES.map((s) => (
                       <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
                     ))}
                   </dl>
+                  <RestHours
+                    hour={hour}
+                    scoreAt={(mark) => restScore(burdenAt(target.cell.burdens, mark), sensitivity)}
+                    onHour={setHour}
+                  />
                 </>
               )
             }
-            side={
-              isHome ? (
-                <LightCard
-                  level={level(homeResult.light)}
-                  score={homeResult.light}
-                  advice={lightAdvice(homeResult.light, sensitivity)}
-                  floor={homeInput.floor}
-                />
-              ) : (
-                <RestHours
-                  hour={hour}
-                  scoreAt={(mark) => restScore(burdenAt(target.cell.burdens, mark), sensitivity)}
-                  onHour={setHour}
-                />
-              )
-            }
           />
-          {isHome && (
-            <ReportSheet>
-              <SunCard report={report} />
-              <VisitChecklist
-                homeId={home.id}
-                items={visitChecklist(target.cell.burdens.night, sensitivity)}
-                checked={checked}
-                onToggle={toggleCheck}
-              />
-              <HomeCompare
-                ranked={ranked}
-                isSaved={isSaved}
-                onToggleSaved={toggleSaved}
-                onSelect={(row) => {
-                  setHome(row.item);
-                  setHomeInput(row.input);
-                }}
-              />
-            </ReportSheet>
-          )}
         </GlassSheets>
       )}
     </>
