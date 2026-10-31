@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Dock, LocateButton, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
+import { Dock, LocateButton, SensitivitySliders, TopSwitch, TuneCard, ZoomButtons } from "@/components/Controls";
 import { DirectionDial, FloorInput, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
 import { GlassSheets, MainSheet } from "@/components/Sheets";
@@ -106,6 +106,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [locating, setLocating] = useState(false);
   const [spotsOpen, setSpotsOpen] = useState(true);
+  const zoomMap = useRef<((step: number) => void) | null>(null);
   const [myPoint, setMyPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [applied, setApplied] = useState(sensitivity);
   const [lookup, setLookup] = useState<{ key: string; address?: string; name?: string } | null>(null);
@@ -531,7 +532,7 @@ export default function Home() {
 
   return (
     <>
-      <div className="map-layer">
+      <div className={`map-layer ${up ? "sheet-up" : ""}`}>
         <RestMap
           cells={heatCells}
           cellSize={detailed ? CELL_SIZE : OVERVIEW_SIZE}
@@ -539,6 +540,8 @@ export default function Home() {
           features={live ? grid!.features : null}
           pinPoint={isHome ? null : point}
           myPoint={myPoint}
+          sheetUp={up}
+          zoomRef={zoomMap}
           focusPoint={target ? { lat: target.lat, lng: target.lng } : null}
           spots={spots}
           activeSpot={active?.spot.id ?? null}
@@ -593,6 +596,12 @@ export default function Home() {
             score={sheetScore}
             up={up}
             emptyValues={[looking, noInfo]}
+            mapTools={
+              <>
+                <ZoomButtons onZoom={(step) => zoomMap.current?.(step)} />
+                <LocateButton busy={locating} onClick={locate} />
+              </>
+            }
             left={
               <>
                 {isHome && (

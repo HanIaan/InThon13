@@ -61,6 +61,15 @@ export function SensitivitySliders({
   );
 }
 
+export function ZoomButtons({ onZoom }: { onZoom: (step: number) => void }) {
+  return (
+    <div className="zoom-buttons glass">
+      <button onClick={() => onZoom(-1)} aria-label="지도 확대">+</button>
+      <button onClick={() => onZoom(1)} aria-label="지도 축소">−</button>
+    </div>
+  );
+}
+
 export function LocateButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
   return (
     <button className="locate glass" onClick={onClick} disabled={busy} aria-label="내 위치 찾기" title="내 위치">

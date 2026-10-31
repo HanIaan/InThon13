@@ -310,7 +310,13 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .mode-switch { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; padding: 3px; background: rgba(16, 20, 24, 0.07); border-radius: 12px; }
 .mode-switch button { padding: 9px 0; border-radius: 9px; font-size: 14px; font-weight: 600; }
 .mode-switch button.on { background: var(--ink); color: #fff; }
-.opening-slot { grid-area: opening; display: grid; min-height: 0; pointer-events: none; }
+.opening-slot { position: relative; grid-area: opening; display: grid; min-height: 0; pointer-events: none; }
+.map-tools { position: absolute; top: 10px; right: 10px; display: grid; justify-items: center; gap: 8px; pointer-events: auto; }
+.map-tools .locate { position: static; }
+.zoom-buttons { display: grid; width: 40px; overflow: hidden; border-radius: 12px; }
+.zoom-buttons button { height: 38px; color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; }
+.zoom-buttons button + button { border-top: 1px solid var(--line); }
+.sheet-up .leaflet-top.leaflet-right { display: none; }
 .opening {
   border-radius: 28px;
   box-shadow: 0 0 0 1px rgba(16, 20, 24, 0.1);

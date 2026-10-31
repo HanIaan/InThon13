@@ -11,6 +11,7 @@ import { featureImage, heatImage } from "@/lib/heat-image";
 type Point = { lat: number; lng: number };
 
 type Props = {
+  zoomRef?: { current: ((step: number) => void) | null };
   cells: Cell[];
   cellSize: { lat: number; lng: number };
   scores: Map<string, number>;
@@ -64,6 +65,7 @@ export default function RestMap({
   onSpot,
   onPoint,
   onView,
+  zoomRef,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -123,6 +125,7 @@ export default function RestMap({
     observer.observe(host.current);
 
     map.current = instance;
+    if (zoomRef) zoomRef.current = (step) => instance.setZoom(instance.getZoom() - step);
     return () => {
       observer.disconnect();
       instance.stop();

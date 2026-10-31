@@ -19,6 +19,8 @@ type Props = {
   features: GridFeature[] | null;
   pinPoint: Point | null;
   myPoint?: Point | null;
+  sheetUp?: boolean;
+  zoomRef?: { current: ((step: number) => void) | null };
   focusPoint: Point | null;
   spots: Recommendation[];
   activeSpot: string | null;
@@ -137,12 +139,13 @@ export default function KakaoMap(props: Props) {
   return failed ? <FallbackMap {...props} /> : <KakaoLayer {...props} onFail={() => setFailed(true)} />;
 }
 
-function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
+function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, sheetUp, zoomRef, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const kit = useRef<{ kakao: any; map: any; heat: any; buildings: any } | null>(null);
   const pins = useRef<any[]>([]);
   const dot = useRef<any>(null);
   const me = useRef<any>(null);
+  const zoomControl = useRef<any>(null);
   const outline = useRef<any>(null);
   const placed = useRef("");
   const latest = useRef({ onPoint, onHome, onView, onSpot, homes });
@@ -268,7 +271,8 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, focu
       map.setZoomable(false);
       // 휴대폰에서는 한 손가락으로 민 동작이 지도 이동이 아니라 페이지 스크롤이 되게 한다.
       map.setDraggable(!window.matchMedia("(pointer: coarse)").matches);
-      map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.TOPRIGHT);
+      zoomControl.current = new kakao.maps.ZoomControl();
+      map.addControl(zoomControl.current, kakao.maps.ControlPosition.TOPRIGHT);
       const heat = imageOverlay(kakao, "heat");
       const buildings = imageOverlay(kakao, "buildings");
       heat.setMap(map);
@@ -328,6 +332,14 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, focu
         const level = Math.min(MAX_LEVEL, Math.max(1, map.getLevel() + step));
         if (level !== map.getLevel()) map.setLevel(level, { anchor, animate: { duration: 160 } });
       };
+      // 지도 창의 버튼은 창 가운데를 기준으로 확대한다.
+      if (zoomRef) {
+        zoomRef.current = (step) => {
+          const box = document.querySelector(".opening")?.getBoundingClientRect();
+          const area = host.current!.getBoundingClientRect();
+          zoomAt(box ? box.left + box.width / 2 : area.left + area.width / 2, box ? box.top + box.height / 2 : area.top + area.height / 2, step);
+        };
+      }
       const onPinch = (e: WheelEvent) => {
         if (!e.ctrlKey || document.querySelector(".dayview")) return;
         e.preventDefault();
@@ -368,6 +380,16 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, focu
       kit.current = null;
     };
   }, []);
+
+  // 정보창이 올라오면 지도 창 안의 버튼이 대신하므로 지도 버튼을 숨긴다.
+  useEffect(() => {
+    const { current } = kit;
+    if (!current || !zoomControl.current) return;
+    current.map.removeControl(zoomControl.current);
+    if (sheetUp) return;
+    zoomControl.current = new current.kakao.maps.ZoomControl();
+    current.map.addControl(zoomControl.current, current.kakao.maps.ControlPosition.TOPRIGHT);
+  }, [sheetUp]);
 
   useEffect(() => {
     redraw.current();
