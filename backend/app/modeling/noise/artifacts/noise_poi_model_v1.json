@@ -1,0 +1,694 @@
+{
+  "schema_version": 1,
+  "model_id": "noise_poi_ridge",
+  "model_version": "1.0.0",
+  "created_at": "2026-11-01T02:09:24+09:00",
+  "status": "estimated",
+  "method": "model",
+  "source": "sdot",
+  "target": "S-DoT AVG_NIS time-slot mean dB residual vs IDW baseline",
+  "training": {
+    "period_start": "2026-10-11T15:00:00+00:00",
+    "period_end": "2026-10-18T14:00:00+00:00",
+    "sdot_rows": 1016,
+    "sensor_slot_rows": 4026,
+    "stores_snapshot": "2026-09-30",
+    "stores_rows": 552422,
+    "osm_cache": "seoul_roads.geojson",
+    "industrial_cache": "industrial_areas.geojson",
+    "target": "S-DoT AVG_NIS time-slot mean dB",
+    "hyperparameters": {
+      "model": "Ridge",
+      "ridge_alpha": 1.0,
+      "per_time_slot": true,
+      "preprocessing": "median imputation then z-score standardization",
+      "target_form": "residual = observed dB - IDW baseline (a_pred)"
+    },
+    "cv": {
+      "scheme": "1km spatial block GroupKFold",
+      "folds": 5,
+      "seed": 42,
+      "commercial_min_stores_300m": 300
+    }
+  },
+  "features": [
+    {
+      "name": "a_pred",
+      "kind": "baseline",
+      "description": "IDW baseline of model A at the point (per time slot); primary 1 km, fallback 5 km radius"
+    },
+    {
+      "name": "nearest_major_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_primary_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_secondary_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_tertiary_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_residential_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_rail_ground_m",
+      "kind": "rail",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_rail_underground_m",
+      "kind": "rail",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "major_road_len_50m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "minor_road_len_50m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "major_road_len_100m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "minor_road_len_100m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "major_road_len_300m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "minor_road_len_300m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "rail_ground_len_300m",
+      "kind": "rail",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "poi_all_50m",
+      "kind": "poi",
+      "description": "all store count within 50m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_all_100m",
+      "kind": "poi",
+      "description": "all store count within 100m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_all_300m",
+      "kind": "poi",
+      "description": "all store count within 300m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_food_50m",
+      "kind": "poi",
+      "description": "food store count within 50m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_food_100m",
+      "kind": "poi",
+      "description": "food store count within 100m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_food_300m",
+      "kind": "poi",
+      "description": "food store count within 300m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_pub_50m",
+      "kind": "poi",
+      "description": "pub store count within 50m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_pub_100m",
+      "kind": "poi",
+      "description": "pub store count within 100m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_pub_300m",
+      "kind": "poi",
+      "description": "pub store count within 300m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_karaoke_50m",
+      "kind": "poi",
+      "description": "karaoke store count within 50m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_karaoke_100m",
+      "kind": "poi",
+      "description": "karaoke store count within 100m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_karaoke_300m",
+      "kind": "poi",
+      "description": "karaoke store count within 300m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_pc_bang_50m",
+      "kind": "poi",
+      "description": "pc_bang store count within 50m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_pc_bang_100m",
+      "kind": "poi",
+      "description": "pc_bang store count within 100m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_pc_bang_300m",
+      "kind": "poi",
+      "description": "pc_bang store count within 300m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_lodging_50m",
+      "kind": "poi",
+      "description": "lodging store count within 50m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_lodging_100m",
+      "kind": "poi",
+      "description": "lodging store count within 100m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_lodging_300m",
+      "kind": "poi",
+      "description": "lodging store count within 300m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_retail_50m",
+      "kind": "poi",
+      "description": "retail store count within 50m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_retail_100m",
+      "kind": "poi",
+      "description": "retail store count within 100m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "poi_retail_300m",
+      "kind": "poi",
+      "description": "retail store count within 300m (상가업소 2026-09-30)"
+    },
+    {
+      "name": "nearest_pub_m",
+      "kind": "poi",
+      "description": "distance to nearest pub store in metres, capped at 2000"
+    },
+    {
+      "name": "nearest_karaoke_m",
+      "kind": "poi",
+      "description": "distance to nearest karaoke store in metres, capped at 2000"
+    },
+    {
+      "name": "industrial_area_ratio_100m",
+      "kind": "industrial",
+      "description": "OSM industrial footprint area ratio / nearest distance (EPSG:5179 metres)"
+    },
+    {
+      "name": "industrial_area_ratio_300m",
+      "kind": "industrial",
+      "description": "OSM industrial footprint area ratio / nearest distance (EPSG:5179 metres)"
+    },
+    {
+      "name": "nearest_industrial_m",
+      "kind": "industrial",
+      "description": "OSM industrial footprint area ratio / nearest distance (EPSG:5179 metres)"
+    }
+  ],
+  "baseline": {
+    "primary": {
+      "max_distance_m": 1000.0,
+      "k": 8,
+      "power": 2.0
+    },
+    "fallback": {
+      "max_distance_m": 5000.0,
+      "k": 8,
+      "power": 2.0
+    }
+  },
+  "confidence": {
+    "rule": "clip(1 - cv_mae_db / scale_db, min_confidence, max_confidence) * (fallback_conf_factor if fallback_used else 1)",
+    "scale_db": 12.0,
+    "min_confidence": 0.2,
+    "max_confidence": 0.9,
+    "fallback_conf_factor": 0.6
+  },
+  "slots": {
+    "dawn": {
+      "intercept": 35.81421570268326,
+      "weights": {
+        "a_pred": -0.8556646755435457,
+        "nearest_major_road_m": -0.0017158239284284413,
+        "nearest_primary_road_m": 2.302516253809223e-05,
+        "nearest_secondary_road_m": 0.0005878608696539055,
+        "nearest_tertiary_road_m": -0.002240500964131412,
+        "nearest_residential_road_m": -0.0031910890750812006,
+        "nearest_rail_ground_m": 0.0007830871798496445,
+        "nearest_rail_underground_m": 0.00017602157068031607,
+        "major_road_len_50m": 0.023165885904256906,
+        "minor_road_len_50m": -0.01349551908051639,
+        "major_road_len_100m": 0.003917398311856904,
+        "minor_road_len_100m": 0.0005770073431408056,
+        "major_road_len_300m": -6.765534379246176e-05,
+        "minor_road_len_300m": 0.0002735276751184624,
+        "rail_ground_len_300m": 0.00035043897605858444,
+        "poi_all_50m": 0.053336057362471524,
+        "poi_all_100m": -0.011532266234035216,
+        "poi_all_300m": 0.0001519558847692423,
+        "poi_food_50m": 0.07661008414231754,
+        "poi_food_100m": -0.004365320131468394,
+        "poi_food_300m": 0.00962243514378991,
+        "poi_pub_50m": -0.2051566338388256,
+        "poi_pub_100m": -0.007141179413125534,
+        "poi_pub_300m": -0.013552180180196717,
+        "poi_karaoke_50m": 1.1150107190531586,
+        "poi_karaoke_100m": -0.39647739598770043,
+        "poi_karaoke_300m": -0.03094968840022177,
+        "poi_pc_bang_50m": 1.1765125929413163,
+        "poi_pc_bang_100m": 0.6977292026811585,
+        "poi_pc_bang_300m": -0.205494862678828,
+        "poi_lodging_50m": -0.055814247213718464,
+        "poi_lodging_100m": -0.06777449360813682,
+        "poi_lodging_300m": -0.007242420509674824,
+        "poi_retail_50m": -0.12098812993273705,
+        "poi_retail_100m": 0.04407528149256286,
+        "poi_retail_300m": -0.0004438861836408119,
+        "nearest_pub_m": 0.00498598157868274,
+        "nearest_karaoke_m": -0.0014967053034078757,
+        "industrial_area_ratio_100m": -8.637901549241064,
+        "industrial_area_ratio_300m": 18.033233852007182,
+        "nearest_industrial_m": 4.324177125404065e-05
+      },
+      "impute": {
+        "a_pred": 44.875288836129364,
+        "nearest_major_road_m": 86.073811879258,
+        "nearest_primary_road_m": 279.18960105921354,
+        "nearest_secondary_road_m": 168.84426700132886,
+        "nearest_tertiary_road_m": 186.89226945109863,
+        "nearest_residential_road_m": 5.05797254843522,
+        "nearest_rail_ground_m": 1396.6956225372646,
+        "nearest_rail_underground_m": 279.7709307595739,
+        "major_road_len_50m": 0.0,
+        "minor_road_len_50m": 171.570797938596,
+        "major_road_len_100m": 104.69362915591788,
+        "minor_road_len_100m": 555.6552978501891,
+        "major_road_len_300m": 1180.1186806571338,
+        "minor_road_len_300m": 4411.197388115146,
+        "rail_ground_len_300m": 0.0,
+        "poi_all_50m": 10.0,
+        "poi_all_100m": 42.0,
+        "poi_all_300m": 385.0,
+        "poi_food_50m": 2.0,
+        "poi_food_100m": 9.0,
+        "poi_food_300m": 94.0,
+        "poi_pub_50m": 0.0,
+        "poi_pub_100m": 0.0,
+        "poi_pub_300m": 8.0,
+        "poi_karaoke_50m": 0.0,
+        "poi_karaoke_100m": 0.0,
+        "poi_karaoke_300m": 2.0,
+        "poi_pc_bang_50m": 0.0,
+        "poi_pc_bang_100m": 0.0,
+        "poi_pc_bang_300m": 0.0,
+        "poi_lodging_50m": 0.0,
+        "poi_lodging_100m": 0.0,
+        "poi_lodging_300m": 7.0,
+        "poi_retail_50m": 2.0,
+        "poi_retail_100m": 8.0,
+        "poi_retail_300m": 75.0,
+        "nearest_pub_m": 107.98021397610637,
+        "nearest_karaoke_m": 191.38480823122654,
+        "industrial_area_ratio_100m": 0.0,
+        "industrial_area_ratio_300m": 0.0,
+        "nearest_industrial_m": 792.9861859865375
+      },
+      "cv": {
+        "mae": 5.184059584456216,
+        "mae_std": 0.20013793140809275,
+        "rmse": 6.451284057083848,
+        "spearman": 0.3054470808467615,
+        "n": 185
+      }
+    },
+    "day": {
+      "intercept": 39.63012213526599,
+      "weights": {
+        "a_pred": -0.8560529499996183,
+        "nearest_major_road_m": -0.003915323243143417,
+        "nearest_primary_road_m": -0.00018487042674019655,
+        "nearest_secondary_road_m": 0.0005326397278609697,
+        "nearest_tertiary_road_m": -0.0027755527829402644,
+        "nearest_residential_road_m": -0.0011459815745728016,
+        "nearest_rail_ground_m": 0.0009711337409212133,
+        "nearest_rail_underground_m": 0.00028912547205653573,
+        "major_road_len_50m": 0.026276828508669088,
+        "minor_road_len_50m": -0.011764768886413176,
+        "major_road_len_100m": 0.002129659976779667,
+        "minor_road_len_100m": -0.000547088320395664,
+        "major_road_len_300m": -0.00021412612397863484,
+        "minor_road_len_300m": 0.00036082951354944804,
+        "rail_ground_len_300m": 0.00044576841327719456,
+        "poi_all_50m": 0.08602093037618493,
+        "poi_all_100m": -0.013938807255836903,
+        "poi_all_300m": 0.001006511163553141,
+        "poi_food_50m": 0.0792562023384715,
+        "poi_food_100m": -0.01300767324681964,
+        "poi_food_300m": 0.010531214388445558,
+        "poi_pub_50m": -0.27741038792517186,
+        "poi_pub_100m": 0.024814095572115197,
+        "poi_pub_300m": -0.03280797819224585,
+        "poi_karaoke_50m": 1.4910241136556919,
+        "poi_karaoke_100m": -0.6789924926068791,
+        "poi_karaoke_300m": -0.02395359519164415,
+        "poi_pc_bang_50m": 2.4180718526503457,
+        "poi_pc_bang_100m": 0.22644436762786427,
+        "poi_pc_bang_300m": -0.2284799956064691,
+        "poi_lodging_50m": -0.07670565206702686,
+        "poi_lodging_100m": -0.1296797219732965,
+        "poi_lodging_300m": -0.006883510233385538,
+        "poi_retail_50m": -0.17674724062495686,
+        "poi_retail_100m": 0.06472792432266401,
+        "poi_retail_300m": -0.004311626572950173,
+        "nearest_pub_m": 0.006800552384044333,
+        "nearest_karaoke_m": -0.002597537355827619,
+        "industrial_area_ratio_100m": -9.53287182004331,
+        "industrial_area_ratio_300m": 22.83731903364867,
+        "nearest_industrial_m": 0.0003330309697351186
+      },
+      "impute": {
+        "a_pred": 48.813283524467614,
+        "nearest_major_road_m": 85.40402490582215,
+        "nearest_primary_road_m": 284.150645654221,
+        "nearest_secondary_road_m": 167.88955920138767,
+        "nearest_tertiary_road_m": 186.89226945109863,
+        "nearest_residential_road_m": 5.095310912698205,
+        "nearest_rail_ground_m": 1388.110876205566,
+        "nearest_rail_underground_m": 279.80039542665537,
+        "major_road_len_50m": 0.0,
+        "minor_road_len_50m": 171.09188914035474,
+        "major_road_len_100m": 109.04942446778225,
+        "minor_road_len_100m": 552.6487683591854,
+        "major_road_len_300m": 1180.1186806571338,
+        "minor_road_len_300m": 4403.624066921499,
+        "rail_ground_len_300m": 0.0,
+        "poi_all_50m": 9.0,
+        "poi_all_100m": 42.0,
+        "poi_all_300m": 383.0,
+        "poi_food_50m": 2.0,
+        "poi_food_100m": 9.0,
+        "poi_food_300m": 94.0,
+        "poi_pub_50m": 0.0,
+        "poi_pub_100m": 0.0,
+        "poi_pub_300m": 8.0,
+        "poi_karaoke_50m": 0.0,
+        "poi_karaoke_100m": 0.0,
+        "poi_karaoke_300m": 2.0,
+        "poi_pc_bang_50m": 0.0,
+        "poi_pc_bang_100m": 0.0,
+        "poi_pc_bang_300m": 0.0,
+        "poi_lodging_50m": 0.0,
+        "poi_lodging_100m": 0.0,
+        "poi_lodging_300m": 7.0,
+        "poi_retail_50m": 2.0,
+        "poi_retail_100m": 8.0,
+        "poi_retail_300m": 74.0,
+        "nearest_pub_m": 108.08449790443541,
+        "nearest_karaoke_m": 191.8948339729064,
+        "industrial_area_ratio_100m": 0.0,
+        "industrial_area_ratio_300m": 0.0,
+        "nearest_industrial_m": 792.9861859865375
+      },
+      "cv": {
+        "mae": 5.8085167218805935,
+        "mae_std": 0.22983194573835636,
+        "rmse": 7.490680382918031,
+        "spearman": 0.3110545314580672,
+        "n": 187
+      }
+    },
+    "evening": {
+      "intercept": 39.51233173949106,
+      "weights": {
+        "a_pred": -0.8734608886913379,
+        "nearest_major_road_m": -0.0038127290264785584,
+        "nearest_primary_road_m": 0.00015701956473218029,
+        "nearest_secondary_road_m": 2.7677145988788623e-05,
+        "nearest_tertiary_road_m": -0.002572628407869166,
+        "nearest_residential_road_m": 0.0003208392008784306,
+        "nearest_rail_ground_m": 0.0010880972314254666,
+        "nearest_rail_underground_m": 0.00028129638754316986,
+        "major_road_len_50m": 0.03018022651248289,
+        "minor_road_len_50m": -0.010827859383060745,
+        "major_road_len_100m": 0.0007526205624320187,
+        "minor_road_len_100m": -0.0017623245347932344,
+        "major_road_len_300m": -0.00017670941156654616,
+        "minor_road_len_300m": 0.0004559395247508267,
+        "rail_ground_len_300m": 0.0004217342369318732,
+        "poi_all_50m": 0.08894117950764704,
+        "poi_all_100m": -0.008535288785193803,
+        "poi_all_300m": -4.215463138463608e-05,
+        "poi_food_50m": 0.09834388136170581,
+        "poi_food_100m": -0.004904507927574201,
+        "poi_food_300m": 0.015390132010721242,
+        "poi_pub_50m": -0.18815775199488208,
+        "poi_pub_100m": -0.04727995287289674,
+        "poi_pub_300m": -0.05682623205611609,
+        "poi_karaoke_50m": 1.5194719816948552,
+        "poi_karaoke_100m": -0.6391543348653154,
+        "poi_karaoke_300m": 0.0010746569036666849,
+        "poi_pc_bang_50m": 2.138032498132122,
+        "poi_pc_bang_100m": 0.5630552554035044,
+        "poi_pc_bang_300m": -0.15589124919056924,
+        "poi_lodging_50m": -0.089335763258691,
+        "poi_lodging_100m": -0.1228658213257242,
+        "poi_lodging_300m": -0.0006567817543485494,
+        "poi_retail_50m": -0.18077469502230964,
+        "poi_retail_100m": 0.057034847842148545,
+        "poi_retail_300m": -0.003540167045186234,
+        "nearest_pub_m": 0.006534476613481442,
+        "nearest_karaoke_m": -0.0024731343820643403,
+        "industrial_area_ratio_100m": -12.630298068273694,
+        "industrial_area_ratio_300m": 27.803706715412588,
+        "nearest_industrial_m": 0.00024342510749694366
+      },
+      "impute": {
+        "a_pred": 48.539192305677645,
+        "nearest_major_road_m": 86.16579179811605,
+        "nearest_primary_road_m": 279.8600280906405,
+        "nearest_secondary_road_m": 167.94795029612476,
+        "nearest_tertiary_road_m": 186.87602226524157,
+        "nearest_residential_road_m": 5.063414448051789,
+        "nearest_rail_ground_m": 1389.5046926014002,
+        "nearest_rail_underground_m": 279.52203294060416,
+        "major_road_len_50m": 0.0,
+        "minor_road_len_50m": 171.93984888787057,
+        "major_road_len_100m": 103.88235506347516,
+        "minor_road_len_100m": 556.6459736077763,
+        "major_road_len_300m": 1178.6649381077773,
+        "minor_road_len_300m": 4439.602164512548,
+        "rail_ground_len_300m": 0.0,
+        "poi_all_50m": 9.0,
+        "poi_all_100m": 42.0,
+        "poi_all_300m": 384.0,
+        "poi_food_50m": 2.0,
+        "poi_food_100m": 9.0,
+        "poi_food_300m": 95.0,
+        "poi_pub_50m": 0.0,
+        "poi_pub_100m": 0.0,
+        "poi_pub_300m": 8.0,
+        "poi_karaoke_50m": 0.0,
+        "poi_karaoke_100m": 0.0,
+        "poi_karaoke_300m": 2.0,
+        "poi_pc_bang_50m": 0.0,
+        "poi_pc_bang_100m": 0.0,
+        "poi_pc_bang_300m": 0.0,
+        "poi_lodging_50m": 0.0,
+        "poi_lodging_100m": 0.0,
+        "poi_lodging_300m": 7.0,
+        "poi_retail_50m": 2.0,
+        "poi_retail_100m": 8.0,
+        "poi_retail_300m": 75.0,
+        "nearest_pub_m": 107.9185960810025,
+        "nearest_karaoke_m": 191.35825117100268,
+        "industrial_area_ratio_100m": 0.0,
+        "industrial_area_ratio_300m": 0.0,
+        "nearest_industrial_m": 793.160857218571
+      },
+      "cv": {
+        "mae": 5.837520823248623,
+        "mae_std": 0.14851925877530278,
+        "rmse": 7.554492523222801,
+        "spearman": 0.3387955965248336,
+        "n": 184
+      }
+    },
+    "night": {
+      "intercept": 38.8839438238807,
+      "weights": {
+        "a_pred": -0.897945996371505,
+        "nearest_major_road_m": -0.0023207285156012477,
+        "nearest_primary_road_m": -5.3451068877328625e-05,
+        "nearest_secondary_road_m": 0.0003056381229430024,
+        "nearest_tertiary_road_m": -0.002362652848212729,
+        "nearest_residential_road_m": -0.0021631233517896173,
+        "nearest_rail_ground_m": 0.0010289749210068357,
+        "nearest_rail_underground_m": 0.0002995514419346313,
+        "major_road_len_50m": 0.0289256770026832,
+        "minor_road_len_50m": -0.013006552996072078,
+        "major_road_len_100m": 0.00319591608018256,
+        "minor_road_len_100m": -0.00021705080549579844,
+        "major_road_len_300m": -0.00021831529391191392,
+        "minor_road_len_300m": 0.00029281937421839335,
+        "rail_ground_len_300m": 0.0003242101747013449,
+        "poi_all_50m": 0.059505245162432246,
+        "poi_all_100m": -0.005238951385379778,
+        "poi_all_300m": 6.364504537839081e-05,
+        "poi_food_50m": 0.11119017715673489,
+        "poi_food_100m": -0.011378900516104119,
+        "poi_food_300m": 0.015530789625639977,
+        "poi_pub_50m": -0.17333338906784407,
+        "poi_pub_100m": 0.021100387901313505,
+        "poi_pub_300m": -0.04625770147073824,
+        "poi_karaoke_50m": 1.5632002830639038,
+        "poi_karaoke_100m": -0.6982518488176737,
+        "poi_karaoke_300m": -0.026567176720298444,
+        "poi_pc_bang_50m": 2.54961448595473,
+        "poi_pc_bang_100m": 0.26991341317140655,
+        "poi_pc_bang_300m": -0.23187251183357893,
+        "poi_lodging_50m": -0.12444834322387416,
+        "poi_lodging_100m": -0.029088370434252202,
+        "poi_lodging_300m": -0.013808278778565802,
+        "poi_retail_50m": -0.1391815453433386,
+        "poi_retail_100m": 0.04199861480660606,
+        "poi_retail_300m": -0.0005631166178391994,
+        "nearest_pub_m": 0.006297957197755207,
+        "nearest_karaoke_m": -0.003208980232175526,
+        "industrial_area_ratio_100m": -12.20801356809004,
+        "industrial_area_ratio_300m": 23.323218065731275,
+        "nearest_industrial_m": 0.00013633848042954061
+      },
+      "impute": {
+        "a_pred": 46.26756201544349,
+        "nearest_major_road_m": 86.16579179811605,
+        "nearest_primary_road_m": 284.39122635327345,
+        "nearest_secondary_road_m": 168.06065880853663,
+        "nearest_tertiary_road_m": 186.81954944825887,
+        "nearest_residential_road_m": 5.063414448051789,
+        "nearest_rail_ground_m": 1393.6043833287251,
+        "nearest_rail_underground_m": 279.52203294060416,
+        "major_road_len_50m": 0.0,
+        "minor_road_len_50m": 172.52660862203285,
+        "major_road_len_100m": 103.88235506347516,
+        "minor_road_len_100m": 557.3227857350164,
+        "major_road_len_300m": 1182.4499370624724,
+        "minor_road_len_300m": 4439.602164512548,
+        "rail_ground_len_300m": 0.0,
+        "poi_all_50m": 9.0,
+        "poi_all_100m": 42.0,
+        "poi_all_300m": 386.0,
+        "poi_food_50m": 2.0,
+        "poi_food_100m": 9.0,
+        "poi_food_300m": 95.0,
+        "poi_pub_50m": 0.0,
+        "poi_pub_100m": 0.0,
+        "poi_pub_300m": 8.0,
+        "poi_karaoke_50m": 0.0,
+        "poi_karaoke_100m": 0.0,
+        "poi_karaoke_300m": 2.5,
+        "poi_pc_bang_50m": 0.0,
+        "poi_pc_bang_100m": 0.0,
+        "poi_pc_bang_300m": 0.0,
+        "poi_lodging_50m": 0.0,
+        "poi_lodging_100m": 0.0,
+        "poi_lodging_300m": 7.0,
+        "poi_retail_50m": 2.0,
+        "poi_retail_100m": 8.0,
+        "poi_retail_300m": 75.0,
+        "nearest_pub_m": 108.03235594027089,
+        "nearest_karaoke_m": 191.35825117100268,
+        "industrial_area_ratio_100m": 0.0,
+        "industrial_area_ratio_300m": 0.0,
+        "nearest_industrial_m": 790.810942298488
+      },
+      "cv": {
+        "mae": 5.720480766252765,
+        "mae_std": 0.05697356166956096,
+        "rmse": 7.2635493324361535,
+        "spearman": 0.3326650963107408,
+        "n": 184
+      }
+    }
+  },
+  "metrics": {
+    "cv_summary_all": {
+      "A_idw": {
+        "mae": 6.928894337175722,
+        "mae_std": 0.3587952026734188,
+        "rmse": 8.890941842662434,
+        "spearman": 0.1730803390062286
+      },
+      "B_ridge": {
+        "mae": 5.730638974005675,
+        "mae_std": 0.23288773713616967,
+        "rmse": 7.330655259858321,
+        "spearman": 0.33178297637336224
+      },
+      "B_poi_ridge": {
+        "mae": 5.638046762271576,
+        "mae_std": 0.12767747987108394,
+        "rmse": 7.206280828606306,
+        "spearman": 0.3944600223995724
+      },
+      "B_poi_histgb": {
+        "mae": 6.593199583125832,
+        "mae_std": 0.20339905391903437,
+        "rmse": 8.604930282092896,
+        "spearman": 0.3480652776831558
+      }
+    }
+  },
+  "adoption": {
+    "status": "not_adopted",
+    "recommendation": "B 유지",
+    "baseline": "B_ridge",
+    "criteria": {
+      "min_folds_improved": 4,
+      "min_mean_gain_db": 0.2,
+      "external_rank_must_not_worsen": true
+    },
+    "result": {
+      "baseline": "B_ridge",
+      "folds_improved": 3,
+      "folds": 5,
+      "mean_gain_db": 0.09259221173409937,
+      "external_spearman_baseline": 0.2142857142857143,
+      "external_spearman": 0.09523809523809526,
+      "external_ok": false,
+      "adopted": false
+    }
+  }
+}
