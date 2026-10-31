@@ -218,8 +218,11 @@ def test_live_notes_always_state_crowd_is_july_history(tmp_path):
     with _client(settings) as client:
         for slot in ("day", "night"):
             notes = inspect(client, slot=slot).json()["notes"]
-            assert any("2026년 7월(2026-07-25~2026-07-31) 생활인구 기준의 과거 자료" in n for n in notes)
-            assert any("2026-07-31에 종료" in n for n in notes)
+            # Exactly one crowd notice (history + noise-period difference merged).
+            assert [n for n in notes if n.startswith("혼잡도는 ")] == [
+                "혼잡도는 2026년 7월(2026-07-25~2026-07-31) 생활인구 기준의 과거 자료로, "
+                "소음 측정 기간(2026-10-01~2026-10-01)과 다릅니다."]
         # Missing crowd cell still carries the historical-series notice.
         notes = inspect(client, IX+9, "night").json()["notes"]
-        assert any("과거 생활인구 자료" in n for n in notes)
+        assert [n for n in notes if n.startswith("혼잡도는 ")] == [
+            "혼잡도는 과거 생활인구 자료 기준입니다. 서울시 행정동 생활인구 시계열은 2026-07-31에 종료됐습니다."]

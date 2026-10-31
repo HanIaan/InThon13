@@ -134,32 +134,29 @@ def _source_name(v: IndicatorValue) -> str | None:
     return name
 
 
-def _crowd_period_note(cell: CellIndicators) -> str | None:
-    """Warn when living-population data predates the sensor measurement window by >= 30 days."""
-    crowd = cell.crowd
-    if crowd.period_start is None or crowd.period_end is None:
-        return None
-    others = [v.period_start for v in (cell.noise, cell.light) if v.period_start is not None]
-    if not any(start - crowd.period_end >= CROWD_PERIOD_GAP for start in others):
-        return None
+def _date_range(v: IndicatorValue) -> str:
     # period_end is exclusive; show the last covered day.
-    last_day = (crowd.period_end - timedelta(microseconds=1)).date()
-    return (f"혼잡도는 {crowd.period_start.date().isoformat()}~{last_day.isoformat()} 생활인구 기준이며 "
-            "소음·조도 측정 기간과 다릅니다.")
+    last = (v.period_end - timedelta(microseconds=1)).date()
+    return f"{v.period_start.date().isoformat()}~{last.isoformat()}"
 
 
-def _crowd_history_note(cell: CellIndicators) -> str:
-    """Always state that crowd comes from a past (discontinued) living-population series."""
-    crowd = cell.crowd
-    tail = f"서울시 행정동 생활인구 시계열은 {LIVING_POPULATION_SERIES_END}에 종료됐습니다."
+def _crowd_note(cell: CellIndicators) -> str:
+    """One live notice: crowd is a past living-population series, plus the noise-period
+    difference when crowd ends >= 30 days before noise measurement starts."""
+    crowd, noise = cell.crowd, cell.noise
     if crowd.period_start is None or crowd.period_end is None:
-        return f"혼잡도는 과거 생활인구 자료 기준입니다. {tail}"
+        return (f"혼잡도는 과거 생활인구 자료 기준입니다. "
+                f"서울시 행정동 생활인구 시계열은 {LIVING_POPULATION_SERIES_END}에 종료됐습니다.")
     first = crowd.period_start.date()
     last = (crowd.period_end - timedelta(microseconds=1)).date()
     months = f"{first.year}년 {first.month}월"
     if (last.year, last.month) != (first.year, first.month):
         months += f"~{last.year}년 {last.month}월"
-    return f"혼잡도는 {months}({first.isoformat()}~{last.isoformat()}) 생활인구 기준의 과거 자료입니다. {tail}"
+    head = f"혼잡도는 {months}({_date_range(crowd)}) 생활인구 기준의 과거 자료"
+    if (noise.period_start is not None and noise.period_end is not None
+            and noise.period_start - crowd.period_end >= CROWD_PERIOD_GAP):
+        return f"{head}로, 소음 측정 기간({_date_range(noise)})과 다릅니다."
+    return f"{head}입니다."
 
 
 def _indicator_detail(ind: Indicator, v: IndicatorValue, score: float | None) -> m.IndicatorDetail:
@@ -196,9 +193,7 @@ def inspect(provider: DataProvider, lat: float, lng: float, slot: TimeSlot, sens
     if sc.comfort_score is None:
         notes.append("사용 가능한 지표가 없어 감각지수를 계산하지 않았습니다.")
     if provider.data_mode == "live":
-        notes.append(_crowd_history_note(cell))
-        if period_note := _crowd_period_note(cell):
-            notes.append(period_note)
+        notes.append(_crowd_note(cell))
     return m.LocationInspectResponse(
         query=m.InspectQuery(lat=lat, lng=lng, time_slot=slot, **sens.model_dump()),
         grid_id=gid, grid_center=grid.cell_center(ix, iy),

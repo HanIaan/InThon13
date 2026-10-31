@@ -16,7 +16,8 @@ from app.core import grid
 from tests.api.test_live_api import IX, IY, inspect, live, make_processed, write_csv  # noqa: F401 (fixture)
 from tests.conftest import NIGHT
 
-PERIOD_NOTE = "생활인구 기준이며 소음·조도 측정 기간과 다릅니다."
+PERIOD_NOTE = "과 다릅니다."
+CROWD_PREFIX = "혼잡도는 "
 
 
 def _client(settings):
@@ -80,12 +81,16 @@ def test_crowd_period_note_when_population_is_stale(tmp_path):
     precompute(settings)
     with _client(settings) as client:
         notes = inspect(client).json()["notes"]
-    assert "혼잡도는 2026-08-01~2026-08-02 생활인구 기준이며 소음·조도 측정 기간과 다릅니다." in notes
+    assert [n for n in notes if n.startswith(CROWD_PREFIX)] == [
+        "혼잡도는 2026년 8월(2026-08-01~2026-08-02) 생활인구 기준의 과거 자료로, "
+        "소음 측정 기간(2026-10-01~2026-10-01)과 다릅니다."]
 
 
 def test_no_crowd_period_note_when_periods_align(live):
     client, *_ = live
-    assert not any(PERIOD_NOTE in n for n in inspect(client).json()["notes"])
+    notes = inspect(client).json()["notes"]
+    assert [n for n in notes if n.startswith(CROWD_PREFIX)] == [
+        "혼잡도는 2026년 10월(2026-10-01~2026-10-01) 생활인구 기준의 과거 자료입니다."]
 
 
 def test_no_crowd_period_note_in_mock_mode(client):
@@ -108,5 +113,6 @@ def test_crowd_period_note_threshold():
         light = IndicatorValue(None, None, DataStatus.missing, 0.0)
         return CellIndicators(grid_id="x", time_slot=TimeSlot.night, noise=noise, light=light, crowd=crowd)
 
-    assert query_service._crowd_period_note(cell(29)) is None
-    assert PERIOD_NOTE in query_service._crowd_period_note(cell(30))
+    assert query_service._crowd_note(cell(29)) == "혼잡도는 2026년 9월(2026-09-01~2026-09-01) 생활인구 기준의 과거 자료입니다."
+    assert query_service._crowd_note(cell(30)) == ("혼잡도는 2026년 8월(2026-08-31~2026-08-31) 생활인구 기준의 과거 자료로, "
+                                                  "소음 측정 기간(2026-10-01~2026-10-01)과 다릅니다.")
