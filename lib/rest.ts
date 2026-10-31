@@ -4,11 +4,38 @@ export type Sensitivity = Record<Sense, number>;
 export type Burden = Record<Sense, number>;
 
 export const SLOTS: { id: Slot; label: string; hour: string }[] = [
-  { id: "day", label: "낮", hour: "오후 2시" },
-  { id: "evening", label: "저녁", hour: "저녁 7시" },
-  { id: "night", label: "밤", hour: "밤 11시" },
-  { id: "dawn", label: "새벽", hour: "새벽 3시" },
+  { id: "day", label: "낮", hour: "07–18시" },
+  { id: "evening", label: "저녁", hour: "18–22시" },
+  { id: "night", label: "밤", hour: "22–02시" },
+  { id: "dawn", label: "새벽", hour: "02–07시" },
 ];
+
+export const HOUR_MARKS = [0, 4, 8, 12, 16, 20];
+
+export function slotOf(hour: number): Slot {
+  if (hour >= 7 && hour < 18) return "day";
+  if (hour >= 18 && hour < 22) return "evening";
+  if (hour >= 22 || hour < 2) return "night";
+  return "dawn";
+}
+
+export function hourLabel(hour: number): string {
+  if (hour === 0) return "오전 12시";
+  if (hour === 12) return "오후 12시";
+  return hour < 12 ? `오전 ${hour}시` : `오후 ${hour - 12}시`;
+}
+
+const ANCHORS: [number, Slot][] = [[0, "night"], [4.5, "dawn"], [12.5, "day"], [20, "evening"], [24, "night"]];
+
+// 시간대 값을 잇달아 보간해 시간 단위 부담을 만든다. 낮에는 빛 지표를 쓰지 않는다.
+export function burdenAt(burdens: Record<Slot, Burden>, hour: number): Burden {
+  const next = ANCHORS.findIndex(([h]) => h > hour);
+  const [fromHour, fromSlot] = ANCHORS[next - 1];
+  const [toHour, toSlot] = ANCHORS[next];
+  const t = (hour - fromHour) / (toHour - fromHour);
+  const mix = (sense: Sense) => Math.round(burdens[fromSlot][sense] * (1 - t) + burdens[toSlot][sense] * t);
+  return { sound: mix("sound"), light: slotOf(hour) === "day" ? 0 : mix("light"), crowd: mix("crowd") };
+}
 
 export const SENSE_LABEL: Record<Sense, string> = { sound: "소리", light: "빛", crowd: "혼잡" };
 
@@ -17,7 +44,7 @@ const clamp = (v: number) => Math.max(0, Math.min(100, v));
 // 평균만 쓰면 한 감각이 심해도 가려지므로 가장 큰 부담을 함께 반영한다.
 export function restScore(burden: Burden, sensitivity: Sensitivity): number {
   const senses: Sense[] = ["sound", "light", "crowd"];
-  const weighted = senses.map((s) => clamp(burden[s] * (0.5 + sensitivity[s] * 0.25)));
+  const weighted = senses.map((s) => clamp(burden[s] * (0.25 + sensitivity[s] * 0.3)));
   const mean = weighted.reduce((a, b) => a + b, 0) / weighted.length;
   return Math.round(100 - clamp(mean * 0.55 + Math.max(...weighted) * 0.45));
 }
@@ -25,15 +52,15 @@ export function restScore(burden: Burden, sensitivity: Sensitivity): number {
 export type Grade = { letter: "A" | "B" | "C"; label: string; color: string };
 
 export function grade(score: number): Grade {
-  if (score >= 65) return { letter: "A", label: "쉬기 좋음", color: "#15803d" };
-  if (score >= 45) return { letter: "B", label: "보통", color: "#a16207" };
-  return { letter: "C", label: "쉬기 어려움", color: "#dc2626" };
+  if (score >= 65) return { letter: "A", label: "쉬기 좋음", color: "#1a7f55" };
+  if (score >= 45) return { letter: "B", label: "보통", color: "#996a0d" };
+  return { letter: "C", label: "쉬기 어려움", color: "#cf3338" };
 }
 
 const STOPS: [number, [number, number, number]][] = [
-  [15, [220, 38, 38]],
-  [50, [250, 204, 21]],
-  [85, [34, 197, 94]],
+  [15, [229, 72, 77]],
+  [50, [240, 196, 84]],
+  [85, [48, 164, 108]],
 ];
 
 // 등급 경계에서 색이 끊기지 않도록 점수를 색으로 연속 변환한다.
