@@ -106,6 +106,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [locating, setLocating] = useState(false);
   const [spotsOpen, setSpotsOpen] = useState(true);
+  const [spotsOffset, setSpotsOffset] = useState({ x: 0, y: 0 });
   const zoomMap = useRef<((step: number) => void) | null>(null);
   const [myPoint, setMyPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [applied, setApplied] = useState(sensitivity);
@@ -582,6 +583,8 @@ export default function Home() {
           lightOff={lightOff}
           open={spotsOpen}
           onToggle={() => setSpotsOpen(!spotsOpen)}
+          offset={spotsOffset}
+          onMove={setSpotsOffset}
           onChoose={chooseSpot}
         />
       )}

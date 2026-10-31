@@ -6,6 +6,8 @@ import { grade, GRADE_A, GRADE_B, HOUR_MARKS, level, SENSE_LABEL, type Sense } f
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
 
+export type Offset = { x: number; y: number };
+
 type PickedPlace = { name: string; detail: string; score: number | null };
 
 // 마우스로도 카드 줄을 잡아 끌어 넘길 수 있게 한다. 끌었으면 손을 뗄 때의 클릭은 무시한다.
@@ -64,6 +66,8 @@ export function SpotsPanel({
   lightOff,
   open,
   onToggle,
+  offset,
+  onMove,
   onChoose,
 }: {
   area: string;
@@ -75,13 +79,36 @@ export function SpotsPanel({
   lightOff: boolean;
   open: boolean;
   onToggle: () => void;
+  offset: Offset;
+  onMove: (next: Offset) => void;
   onChoose: (id: string) => void;
 }) {
   const dragScroll = useDragScroll();
+  const move = useRef<{ x: number; y: number; from: Offset; box: DOMRect } | null>(null);
   return (
-    <aside className={`spots glass ${open ? "" : "closed"}`} aria-label="추천 휴식 장소">
+    <aside className={`spots glass ${open ? "" : "closed"}`} style={open ? { translate: `${offset.x}px ${offset.y}px` } : undefined} aria-label="추천 휴식 장소">
       <button className="spots-toggle glass" onClick={onToggle} aria-expanded={open} aria-label={open ? "추천 장소 접기" : "추천 장소 펼치기"}>{open ? "›" : "‹"}</button>
-      <header>
+      <header
+        onPointerDown={(e) => {
+          move.current = { x: e.clientX, y: e.clientY, from: offset, box: e.currentTarget.parentElement!.getBoundingClientRect() };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const start = move.current;
+          if (!start) return;
+          // 배율이 적용된 카드라 화면 픽셀 이동량을 배율로 나눠 옮긴다. 화면 밖으로는 나가지 않는다.
+          const dx = Math.min(window.innerWidth - start.box.right, Math.max(-start.box.left, e.clientX - start.x));
+          const dy = Math.min(window.innerHeight - start.box.bottom, Math.max(-start.box.top, e.clientY - start.y));
+          const scale = Number(getComputedStyle(document.documentElement).getPropertyValue("--ui")) || 1;
+          onMove({ x: start.from.x + dx / scale, y: start.from.y + dy / scale });
+        }}
+        onPointerUp={() => {
+          move.current = null;
+        }}
+        onPointerCancel={() => {
+          move.current = null;
+        }}
+      >
         <h2>지금 쉬기 좋은 곳</h2>
         <p>{area} 주변 · {time}</p>
       </header>

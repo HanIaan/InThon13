@@ -158,6 +158,8 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .map-me { width: 16px; height: 16px; margin: -8px; background: #2f7cf6; border: 3px solid #fff; border-radius: 50%; box-sizing: border-box; box-shadow: 0 0 0 7px rgba(47, 124, 246, 0.22); pointer-events: none; }
 .locate { position: fixed; z-index: 30; top: 8px; right: 56px; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--ink); cursor: pointer; }
 .locate:disabled { opacity: 0.55; cursor: progress; }
+/* 카카오 확대 버튼의 인라인 모서리를 앱의 카드 모양에 맞춘다. */
+.map div:has(> button[title="확대"]) { overflow: hidden; border-radius: 14px !important; box-shadow: 0 8px 28px rgba(16, 20, 24, 0.12) !important; }
 .map-dot { width: 18px; height: 18px; margin: -9px; background: #0b0d12; border: 3px solid #fff; border-radius: 50%; box-sizing: border-box; pointer-events: none; }
 .search input { flex: 1; min-width: 0; height: 38px; padding: 0 16px; background: none; border: 0; outline: 0; font-size: 15px; }
 .search input::placeholder { color: var(--muted); }
@@ -183,7 +185,8 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .spots { position: fixed; z-index: 30; top: 50%; right: 20px; transform: translateY(-50%); width: 300px; padding: 16px 12px; border-radius: 20px; transition: transform 0.28s ease; }
 .spots.closed { transform: translate(calc(100% + 20px), -50%); }
 .spots-toggle { position: absolute; top: 50%; left: -28px; display: grid; place-items: center; width: 28px; height: 64px; border-radius: 12px 0 0 12px; color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer; transform: translateY(-50%); }
-.spots header { padding: 0 8px 10px; }
+.spots header { padding: 0 8px 10px; cursor: grab; touch-action: none; user-select: none; }
+.spots header:active { cursor: grabbing; }
 .spots h2 { font-size: 16px; font-weight: 700; }
 .spots header p { margin-top: 2px; color: var(--muted); font-size: 12px; }
 .spots ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
@@ -419,6 +422,7 @@ html.locked { overflow: hidden; }
   .switch { top: 12px; }
   /* 검색창 58+54, 시간 바 52, 간격 10씩 */
   .spots { top: auto; right: auto; left: 50%; bottom: 202px; width: calc(100vw / var(--ui) - 24px); max-width: 480px; transform: translateX(-50%); padding: 8px; }
+  .spots { translate: none !important; }
   .spots.closed { transform: translateX(-50%); }
   .spots-toggle { display: none; }
   .spots header { display: none; }
