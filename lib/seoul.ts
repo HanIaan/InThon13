@@ -24,6 +24,8 @@ export type MapView = { south: number; north: number; west: number; east: number
 type Row = (string | number | null)[];
 type OsmTile = { spots: Spot[]; roads: number[][] };
 type BuildingRow = [number, number, number[], number, string, string, string];
+type StreetRow = [number, number, number[]];
+export type Street = { width: number; line: [number, number][] };
 type Point = { lat: number; lng: number };
 
 function tilesIn(view: Omit<MapView, "zoom">, tile: typeof TILE = TILE) {
@@ -108,6 +110,13 @@ export async function buildingAt(place: Point & { name?: string; detail?: string
   if (found) return { ...found, mark, levels: found.levels ?? close.find((home) => home.levels)?.levels, name: found.name ?? place.building ?? lot?.building ?? (found.type === HOME_TYPE[0] ? place.name : undefined), address: place.detail ?? lot?.address ?? found.address };
   const address = place.detail ?? lot?.address ?? place.name;
   return { id: `p${place.lat},${place.lng}`, name: place.building ?? lot?.building ?? place.name ?? address, type: "위치", address, lat: place.lat, lng: place.lng, mark, ring: [] };
+}
+
+// 3D 화면의 도로다. tools/build_streets.py와 타일 번호를 맞춘다.
+export async function loadStreets(point: Point, margin = 0.008): Promise<Street[]> {
+  const rows = await Promise.all(tilesIn(around(point, margin), BUILDING_TILE).map((key) => load<StreetRow[]>(`/data/streets/${key}.json`).catch(() => [] as StreetRow[])));
+  const unique = new Map(rows.flat().map((row) => [row[0], row]));
+  return [...unique.values()].map(([, width, flat]) => ({ width, line: decodeRing(flat) }));
 }
 
 export async function loadBuildings(point: Point, margin = 0.006): Promise<Building[]> {

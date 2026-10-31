@@ -14,6 +14,7 @@ import glob
 import json
 import math
 import os
+import re
 import struct
 import sys
 from collections import Counter, defaultdict
@@ -28,6 +29,7 @@ STEP_LNG, STEP_LAT = 0.0057, 0.0045
 SCALE = 1000000
 SEOUL = (126.7, 37.38, 127.3, 37.75)
 MATCH_RATIO = 0.5
+UNDERGROUND_NAME = re.compile(r"지하철\s*\d|지하철역|지하상가|지하쇼핑|지하도상가|지하주차장")
 MIN_STOREY_M, MAX_STOREY_M = 1.5, 10
 TO_WGS84 = Transformer.from_crs("EPSG:5179", "EPSG:4326", always_xy=True)
 FROM_AL = Transformer.from_crs("EPSG:5186", "EPSG:5179", always_xy=True)
@@ -63,6 +65,11 @@ def dong_names(dbf_path):
     return names
 
 
+# 지하철역, 지하상가, 지하주차장은 땅 위에 서 있지 않으므로 3D와 일조 계산에서 뺀다.
+def is_underground(section, ground, under, name):
+    return section == "1" or (ground == 0 and under > 0) or (ground <= 1 and UNDERGROUND_NAME.search(name) is not None)
+
+
 def read_records(folder, names):
     shp_path = glob.glob(os.path.join(folder, "*.shp"))[0]
     dbf = open(shp_path[:-3] + "dbf", "rb")
@@ -85,6 +92,9 @@ def read_records(folder, names):
         coords = struct.unpack(f"<{points_n * 2}d", body[44 + 4 * parts_n : 44 + 4 * parts_n + 16 * points_n])
         dbf.seek(header + index * size)
         row = dbf.read(size)
+        name = " ".join(v for v in (text(row, "BULD_NM"), text(row, "BULD_NM_DC")) if v)
+        if is_underground(text(row, "BULD_SE_CD"), number(row, "GRO_FLO_CO"), number(row, "UND_FLO_CO"), name):
+            continue
         code = text(row, "SIG_CD") + text(row, "EMD_CD") + text(row, "LI_CD")
         main, sub = number(row, "LNBR_MNNM"), number(row, "LNBR_SLNO")
         mountain = text(row, "MNTN_YN") == "1"
@@ -104,7 +114,7 @@ def read_records(folder, names):
                 "ring": ring,
                 "floors": number(row, "GRO_FLO_CO"),
                 "kind": 1 if use == "01" else 2 if use == "02" else 0,
-                "name": " ".join(v for v in (text(row, "BULD_NM"), text(row, "BULD_NM_DC")) if v),
+                "name": name,
                 "address": f"{names.get(code, '')} {'산' if mountain else ''}{lot}".strip(),
                 "pnu": f"{code}{2 if mountain else 1}{main:04d}{sub:04d}",
             }

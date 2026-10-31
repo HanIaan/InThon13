@@ -12,9 +12,10 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { DirectionDial, FloorInput, ModeSwitch } from "@/components/HomeViews";
 import type { Cell, Home } from "@/lib/data";
-import { DIRECTIONS, formatDuration, roadsAround, sunReport, type Building, type HomeInput } from "@/lib/home-report";
+import { DIRECTIONS, formatDuration, sunReport, type Building, type HomeInput } from "@/lib/home-report";
+import type { Street } from "@/lib/seoul";
 import { level, slotOf } from "@/lib/rest";
-import { groundAt } from "@/lib/terrain";
+import { coverAt, groundAt, terrainSummary, type Cover } from "@/lib/terrain";
 
 type ViewMode = "window" | "orbit" | "top";
 
@@ -120,6 +121,18 @@ type Scene = {
 
 const GROUND_M = 9000;
 const GROUND_CELLS = 300;
+const COVER_COLORS = { none: 0x77786f, park: 0x7d9a5d, forest: 0x4c6a43, water: 0x4d7fa8 };
+const STREET_RANGE_M = 800;
+const ROAD_STEP_M = 12;
+const ROAD_LIFT_M = 0.35;
+const WIDE_ROAD_M = 9;
+const ROAD_COLOR = 0x3f4144;
+const LANE_COLOR = 0x56575a;
+const TREE_STEP_M = 9;
+const TREE_HEIGHT_M = 9;
+const MAX_TREES = 6000;
+const TREE_CHANCE: Partial<Record<Cover, number>> = { forest: 0.8, park: 0.2 };
+const TREE_COLORS = [0x3f5f39, 0x4b6d3f, 0x567a45];
 const MAX_CARS = 220;
 const MAX_PEOPLE = 420;
 const MAX_SIGNS = 240;
@@ -137,7 +150,7 @@ function insideRing(x: number, z: number, ring: number[][]) {
   return hit;
 }
 
-function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]): Scene {
+function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[], streets: Street[]): Scene {
   const metersPerLng = 111000 * Math.cos((home.lat * Math.PI) / 180);
   const toLocal = (lat: number, lng: number) => [(lng - home.lng) * metersPerLng, -(lat - home.lat) * metersPerLat];
   const ownRing = home.ring.map(([lat, lng]) => toLocal(lat, lng));
@@ -152,7 +165,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xc8d4dc, 0.00055);
+  scene.fog = new THREE.FogExp2(0xc8d4dc, 0.00032);
 
   const orbitCamera = new THREE.PerspectiveCamera(45, 1, 1, 8000);
   const windowCamera = new THREE.PerspectiveCamera(36, 1, 0.5, 8000);
@@ -182,9 +195,15 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const terrain = new THREE.PlaneGeometry(GROUND_M, GROUND_M, GROUND_CELLS, GROUND_CELLS);
   terrain.rotateX(-Math.PI / 2);
   const surface = terrain.getAttribute("position");
-  for (let i = 0; i < surface.count; i++) surface.setY(i, heightAt(surface.getX(i), surface.getZ(i)));
+  const tint = new Float32Array(surface.count * 3);
+  for (let i = 0; i < surface.count; i++) {
+    const [x, z] = [surface.getX(i), surface.getZ(i)];
+    surface.setY(i, heightAt(x, z));
+    new THREE.Color(COVER_COLORS[coverAt(home.lat - z / metersPerLat, home.lng + x / metersPerLng)]).toArray(tint, i * 3);
+  }
+  terrain.setAttribute("color", new THREE.BufferAttribute(tint, 3));
   terrain.computeVertexNormals();
-  const ground = new THREE.Mesh(terrain, new THREE.MeshStandardMaterial({ color: 0x77786f, roughness: 0.96 }));
+  const ground = new THREE.Mesh(terrain, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96 }));
   ground.receiveShadow = true;
   scene.add(ground);
 
@@ -253,8 +272,31 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   // 실제 도로를 따라 자동차, 사람, 간판, 가로등 자리를 만든다.
   const random = seeded(101);
   const lanes: { x: number; y: number; z: number; angle: number; distance: number }[] = [];
-  for (const line of roadsAround(home.lat, home.lng, RANGE_M)) {
+  const roadPositions: number[] = [];
+  const roadColors: number[] = [];
+  const roadIndex: number[] = [];
+  for (const { line, width } of streets) {
     const points = line.map(([lat, lng]) => toLocal(lat, lng));
+    if (!points.some(([x, z]) => Math.hypot(x, z) < STREET_RANGE_M)) continue;
+    const color = new THREE.Color(width >= WIDE_ROAD_M ? ROAD_COLOR : LANE_COLOR);
+    let previous = -1;
+    for (let i = 1; i < points.length; i++) {
+      const [ax, az] = points[i - 1];
+      const [bx, bz] = points[i];
+      const length = Math.hypot(bx - ax, bz - az);
+      if (!length) continue;
+      // 지형을 따라가도록 구간을 잘게 나눠 도로 띠를 만든다.
+      const [nx, nz] = [((bz - az) / length) * (width / 2), (-(bx - ax) / length) * (width / 2)];
+      const steps = Math.max(1, Math.ceil(length / ROAD_STEP_M));
+      for (let step = i === 1 ? 0 : 1; step <= steps; step++) {
+        const [x, z] = [ax + ((bx - ax) * step) / steps, az + ((bz - az) * step) / steps];
+        const at = roadPositions.length / 3;
+        roadPositions.push(x + nx, heightAt(x + nx, z + nz) + ROAD_LIFT_M, z + nz, x - nx, heightAt(x - nx, z - nz) + ROAD_LIFT_M, z - nz);
+        roadColors.push(color.r, color.g, color.b, color.r, color.g, color.b);
+        if (previous >= 0) roadIndex.push(previous, previous + 1, at, previous + 1, at + 1, at);
+        previous = at;
+      }
+    }
     for (let i = 1; i < points.length; i++) {
       const [ax, az] = points[i - 1];
       const [bx, bz] = points[i];
@@ -265,6 +307,14 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
       }
     }
   }
+  const road = new THREE.BufferGeometry();
+  road.setAttribute("position", new THREE.Float32BufferAttribute(roadPositions, 3));
+  road.setAttribute("color", new THREE.Float32BufferAttribute(roadColors, 3));
+  road.setIndex(roadIndex);
+  road.computeVertexNormals();
+  const roadMesh = new THREE.Mesh(road, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  roadMesh.receiveShadow = true;
+  scene.add(roadMesh);
   lanes.sort((a, b) => a.distance - b.distance);
   const dummy = new THREE.Object3D();
   const spread = <T,>(max: number, make: (lane: (typeof lanes)[number], i: number) => T) =>
@@ -308,6 +358,28 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const lampMaterial = new THREE.PointsMaterial({ color: 0xffd9a8, size: 3.4, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
   const lamps = new THREE.Points(lampGeometry, lampMaterial);
   scene.add(cars, people, signs, lamps);
+
+  // 숲과 공원에는 지표 데이터를 따라 나무를 심는다. 나무 한 그루가 실제 위치를 뜻하지는 않는다.
+  const treeSpots: { x: number; y: number; z: number; size: number }[] = [];
+  for (let x = -RANGE_M; x <= RANGE_M; x += TREE_STEP_M) {
+    for (let z = -RANGE_M; z <= RANGE_M; z += TREE_STEP_M) {
+      const [tx, tz] = [x + random() * TREE_STEP_M, z + random() * TREE_STEP_M];
+      const cover = coverAt(home.lat - tz / metersPerLat, home.lng + tx / metersPerLng);
+      if (Math.hypot(tx, tz) > RANGE_M || random() > (TREE_CHANCE[cover] ?? 0) || insideRing(tx, tz, ownRing)) continue;
+      treeSpots.push({ x: tx, y: heightAt(tx, tz), z: tz, size: 0.8 + random() * 0.7 });
+    }
+  }
+  const trees = new THREE.InstancedMesh(new THREE.ConeGeometry(2.8, TREE_HEIGHT_M, 7), new THREE.MeshStandardMaterial({ roughness: 0.95 }), Math.min(treeSpots.length, MAX_TREES));
+  treeSpots.slice(0, MAX_TREES).forEach((tree, i) => {
+    dummy.position.set(tree.x, tree.y + (TREE_HEIGHT_M * tree.size) / 2, tree.z);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.setScalar(tree.size);
+    dummy.updateMatrix();
+    trees.setMatrixAt(i, dummy.matrix);
+    trees.setColorAt(i, new THREE.Color(TREE_COLORS[i % TREE_COLORS.length]));
+  });
+  trees.castShadow = true;
+  scene.add(trees);
 
   const composer = new EffectComposer(renderer);
   const renderPass = new RenderPass(scene, windowCamera);
@@ -446,6 +518,7 @@ export default function DayView({
   input,
   maxFloor,
   buildings,
+  streets,
   onInput,
   onClose,
 }: {
@@ -454,6 +527,7 @@ export default function DayView({
   input: HomeInput;
   maxFloor: number;
   buildings: Building[] | null;
+  streets: Street[];
   onInput: (next: HomeInput) => void;
   onClose: () => void;
 }) {
@@ -505,7 +579,7 @@ export default function DayView({
   useEffect(() => {
     if (!canvas.current || !buildings) return;
     fitCanvas();
-    const built = buildScene(canvas.current, home, buildings);
+    const built = buildScene(canvas.current, home, buildings, streets);
     scene.current = built;
     const refresh = () => {
       fitCanvas();
@@ -522,7 +596,7 @@ export default function DayView({
       built.dispose();
       scene.current = null;
     };
-  }, [buildings, home]);
+  }, [buildings, streets, home]);
 
   useEffect(() => {
     fitCanvas();
@@ -638,6 +712,7 @@ export default function DayView({
         </div>
         <button className={`dv-sound ${listening ? "on" : ""}`} onClick={toggleSound}>{listening ? "소리 끄기" : "이 시간 소리 듣기"}</button>
         <dl>
+          <div><dt>지형</dt><dd>{terrainSummary(home.lat, home.lng) ?? "계산 중"}</dd></div>
           <div><dt>일조</dt><dd>{report ? formatDuration(report.winter.minutes) : "계산 중"}</dd></div>
           <div><dt>지금 햇빛</dt><dd>{lit ? "듦" : altitude > 0 ? "가려짐" : "해 없음"}</dd></div>
           <div><dt>빛공해</dt><dd>{slot === "day" ? "낮 미적용" : level(cell.burdens[slot].light)}</dd></div>

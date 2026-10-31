@@ -53,7 +53,8 @@ import {
   type Slot,
 } from "@/lib/rest";
 import { KAKAO_KEY, kakaoAddress, type SearchPlace } from "@/lib/kakao";
-import { buildingAt, CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, OVERVIEW_SIZE, useSeoul, type MapView } from "@/lib/seoul";
+import { terrainSummary } from "@/lib/terrain";
+import { buildingAt, CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, loadStreets, OVERVIEW_SIZE, useSeoul, type MapView, type Street } from "@/lib/seoul";
 import { useGlideScroll } from "@/lib/use-glide-scroll";
 
 // 역지오코딩 주소의 "안암동 안암동3가"처럼 겹치는 말과 건물 이름을 뺀다.
@@ -89,6 +90,7 @@ export default function Home() {
   const [home, setHome] = useState<HomePlace>(() => nearestHome(SEED_HOMES, START_POINT.lat, START_POINT.lng));
   const [homeInput, setHomeInput] = useState<HomeInput>({ floor: DEFAULT_FLOOR, direction: "south" });
   const [buildings, setBuildings] = useState<Building[] | null>(null);
+  const [streets, setStreets] = useState<Street[]>([]);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"rest" | "home">("rest");
   const [tuneOpen, setTuneOpen] = useState(true);
@@ -234,8 +236,10 @@ export default function Home() {
     if (!isHome) return;
     let current = true;
     setBuildings(null);
-    loadBuildings(home).then((list) => {
-      if (current) setBuildings(list);
+    Promise.all([loadBuildings(home), loadStreets(home)]).then(([list, roads]) => {
+      if (!current) return;
+      setStreets(roads);
+      setBuildings(list);
     });
     return () => {
       current = false;
@@ -343,6 +347,7 @@ export default function Home() {
         facts: [
           { label: "주소", value: home.address ?? tidyAddress(foundAddress, home.name) },
           { label: "규모", value: home.levels ? `지상 ${home.levels}층` : missing },
+          { label: "지형", value: buildings ? terrainSummary(home.lat, home.lng) ?? missing : missing },
         ],
         website: undefined,
         lat: home.lat,
@@ -545,6 +550,7 @@ export default function Home() {
           input={homeInput}
           maxFloor={Number(home.levels) || 30}
           buildings={buildings}
+          streets={streets}
           onInput={setHomeInput}
           onClose={() => setDayOpen(false)}
         />

@@ -48,15 +48,6 @@ export function addRoads(lines: [number, number][][]) {
   roads.push(...lines);
 }
 
-export function roadsAround(lat: number, lng: number, meters: number) {
-  return roads.filter((line) =>
-    line.some(([roadLat, roadLng]) => {
-      const { x, y } = toMeters({ lat, lng }, roadLat, roadLng);
-      return Math.hypot(x, y) < meters;
-    }),
-  );
-}
-
 export function setSensors(list: Sensor[]) {
   sensors = list;
 }
