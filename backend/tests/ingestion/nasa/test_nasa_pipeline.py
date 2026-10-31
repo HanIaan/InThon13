@@ -14,7 +14,10 @@ import pytest
 
 from app.contracts.constants import SEOUL_BBOX
 from app.ingestion.nasa.client import (
+    GranuleInfo,
     download_granule,
+    get_latest_granule,
+    query_cmr_granules,
     tile_bbox,
     tile_for_coords,
     tiles_for_bbox,
@@ -100,6 +103,56 @@ class TestClientTileGrid:
         out_file = tmp_path / "test.h5"
         with pytest.raises(ValueError, match="NASA_EARTHDATA_TOKEN is required"):
             download_granule("https://ladsweb.modaps.eosdis.nasa.gov/archive/test.h5", out_file, token=None)
+
+    def test_query_cmr_granules_mock(self, monkeypatch):
+        """Test CMR response parsing into GranuleInfo data structures."""
+        mock_response = {
+            "feed": {
+                "entry": [
+                    {
+                        "producer_granule_id": "VNP46A3.A2026244.h30v05.002.2026291122007.h5",
+                        "time_start": "2026-09-01T00:00:00.000Z",
+                        "time_end": "2026-10-01T00:00:00.000Z",
+                        "granule_size": "86.9198",
+                        "links": [
+                            {"href": "https://data.laadsdaac.earthdatacloud.nasa.gov/prod-lads/VNP46A3/VNP46A3.A2026244.h30v05.002.2026291122007.h5"},
+                            {"href": "s3://prod-lads/VNP46A3/VNP46A3.A2026244.h30v05.002.2026291122007.h5"},
+                        ],
+                    }
+                ]
+            }
+        }
+
+        class MockResponse:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return mock_response
+
+        class MockClient:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def get(self, url, params=None): return MockResponse()
+
+        monkeypatch.setattr("httpx.Client", lambda *args, **kwargs: MockClient())
+
+        granules = query_cmr_granules(product="VNP46A3", tile="h30v05", year_month="2026-09")
+        assert len(granules) == 1
+        g = granules[0]
+        assert g.producer_granule_id == "VNP46A3.A2026244.h30v05.002.2026291122007.h5"
+        assert g.tile == "h30v05"
+        assert g.period_start == "2026-09-01T00:00:00.000Z"
+        assert g.size_mb == 86.92
+        assert g.download_url.startswith("https://")
+
+    @pytest.mark.network
+    def test_query_cmr_granules_live(self):
+        """Live network test to verify NASA CMR returns the expected VNP46A3 h30v05 files."""
+        granule = get_latest_granule(product="VNP46A3", tile="h30v05", year_month="2026-09")
+        assert granule is not None
+        assert "h30v05" in granule.producer_granule_id
+        assert granule.period_start.startswith("2026-09")
+        assert granule.size_mb > 50.0
+        assert granule.download_url.startswith("https://")
 
 
 class TestHDF5ReaderAndExtraction:
@@ -287,6 +340,17 @@ class TestSyntheticSeoulRunner:
     def test_cli_run_without_token_fails_cleanly(self, tmp_path, monkeypatch):
         """When no token is present and no input-file is given, run must fail without creating output."""
         monkeypatch.delenv("NASA_EARTHDATA_TOKEN", raising=False)
+        # Mock get_latest_granule so offline tests don't require internet
+        fake_granule = GranuleInfo(
+            producer_granule_id="VNP46A3.A2026244.h30v05.002.2026291122007.h5",
+            tile="h30v05",
+            period_start="2026-09-01T00:00:00.000Z",
+            period_end="2026-10-01T00:00:00.000Z",
+            size_mb=86.92,
+            download_url="https://data.laadsdaac.earthdatacloud.nasa.gov/prod-lads/VNP46A3/VNP46A3.A2026244.h30v05.002.2026291122007.h5",
+        )
+        monkeypatch.setattr("app.ingestion.nasa.run.get_latest_granule", lambda **kw: fake_granule)
+
         out_csv = tmp_path / "cli_output.csv"
         args = parse_args([
             "--product", "VNP46A3",
