@@ -14,7 +14,7 @@ export function FloorInput({
 }) {
   return (
     <label className="floor">
-      <span>층수</span>
+      <span>내 층</span>
       <input
         type="number"
         min={1}

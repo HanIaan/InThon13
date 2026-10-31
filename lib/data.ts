@@ -53,6 +53,8 @@ export type Home = {
   type: string;
   levels?: string;
   address?: string;
+  pnu?: string;
+  mark?: { lat: number; lng: number };
   ring: [number, number][];
   lat: number;
   lng: number;
