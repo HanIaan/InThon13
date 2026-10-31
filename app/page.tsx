@@ -357,6 +357,22 @@ export default function Home() {
     );
   }
 
+  // 탭을 바꿔도 보고 있던 자리를 그대로 이어서 본다.
+  function switchTab(next: "rest" | "home") {
+    if (next === tab) return;
+    const here = isHome ? (home.mark ?? { lat: home.lat, lng: home.lng }) : target ? { lat: target.lat, lng: target.lng } : point;
+    setTab(next);
+    if (next === "home") {
+      const request = ++homeSearch.current;
+      buildingAt(here).then((found) => {
+        if (request === homeSearch.current) chooseHome(found);
+      });
+    } else {
+      setPoint(here);
+      setPicked(true);
+    }
+  }
+
   function chooseOnMap(next: { lat: number; lng: number }) {
     if (isHome) {
       if (mapView && mapView.zoom < HOME_ZOOM) setToast("지도를 확대해 건물을 골라 주세요");
@@ -535,7 +551,7 @@ export default function Home() {
         />
       </div>
 
-      <TopSwitch isHome={isHome} onChange={setTab} />
+      <TopSwitch isHome={isHome} onChange={switchTab} />
       {!up && <LocateButton busy={locating} onClick={locate} />}
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
