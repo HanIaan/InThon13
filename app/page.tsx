@@ -78,6 +78,8 @@ const DESIGN_TALL = [390, 812];
 const MAX_UI_SCALE = 1.6;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
+const DEFAULT_FLOOR = 3;
+
 export default function Home() {
   const [hour, setHour] = useState(23);
   const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 4, light: 2, crowd: 3, sun: 3 });
@@ -85,7 +87,7 @@ export default function Home() {
   const [picked, setPicked] = useState(false);
   const [activeSpot, setActiveSpot] = useState<string | null>(null);
   const [home, setHome] = useState<HomePlace>(() => nearestHome(SEED_HOMES, START_POINT.lat, START_POINT.lng));
-  const [homeInput, setHomeInput] = useState<HomeInput>({ floor: 3, direction: "south" });
+  const [homeInput, setHomeInput] = useState<HomeInput>({ floor: DEFAULT_FLOOR, direction: "south" });
   const [buildings, setBuildings] = useState<Building[] | null>(null);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"rest" | "home">("rest");
@@ -312,8 +314,10 @@ export default function Home() {
 
   function chooseHome(next: HomePlace) {
     setHome(next);
-    const levels = Number(next.levels) || 0;
-    if (levels && homeInput.floor > levels) setHomeInput({ ...homeInput, floor: levels });
+    // 내 층은 건물마다 다르므로, 다른 건물을 고르면 기본값으로 되돌린다.
+    if (next.id === home.id) return;
+    const levels = Number(next.levels) || DEFAULT_FLOOR;
+    setHomeInput({ ...homeInput, floor: Math.min(DEFAULT_FLOOR, levels) });
   }
 
   const sleepOf = (item: HomePlace, input: HomeInput) => {

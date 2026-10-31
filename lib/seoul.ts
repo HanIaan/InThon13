@@ -105,7 +105,7 @@ export async function buildingAt(place: Point & { name?: string; detail?: string
   if (!lot?.pnu) found ??= under[0];
   const mark = { lat: place.lat, lng: place.lng };
   // 원본은 한 건물을 층수 있는 기록과 없는 기록으로 나누기도 해서, 같은 번지의 가까운 기록에서 층수를 찾는다.
-  if (found) return { ...found, mark, levels: found.levels ?? close.find((home) => home.levels)?.levels, name: place.building ?? lot?.building ?? found.name ?? (found.type === HOME_TYPE[0] ? place.name : undefined), address: place.detail ?? lot?.address ?? found.address };
+  if (found) return { ...found, mark, levels: found.levels ?? close.find((home) => home.levels)?.levels, name: found.name ?? place.building ?? lot?.building ?? (found.type === HOME_TYPE[0] ? place.name : undefined), address: place.detail ?? lot?.address ?? found.address };
   const address = place.detail ?? lot?.address ?? place.name;
   return { id: `p${place.lat},${place.lng}`, name: place.building ?? lot?.building ?? place.name ?? address, type: "위치", address, lat: place.lat, lng: place.lng, mark, ring: [] };
 }
