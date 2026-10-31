@@ -1,0 +1,144 @@
+{
+  "built": "2026-10-31",
+  "cell_size_m": 100,
+  "crs_note": "격자는 EPSG:5179 기준 100m. lng/lat은 칸 중심(WGS84). 칸 폴리곤은 중심 ±50m로 만들면 됨",
+  "time_slots": {
+    "day": "07–18시",
+    "evening": "18–22시",
+    "night": "22–02시",
+    "dawn": "02–07시"
+  },
+  "light_not_applicable": [
+    "day"
+  ],
+  "score_direction": "모든 *_score는 0~100, 높을수록 부담이 큼(시끄러움/밝음/붐빔)",
+  "formulas": {
+    "noise_score": "clip((추정 dB − 40) / 30) × 100. 추정 dB = w·S-DoT IDW(600m) + (1−w)·상가 소음원 모델, w = exp(−가까운 센서 거리/300m)",
+    "light_score": "env = NASA 500m를 상가 빛 밀도 비율로 100m에 나눈 값의 로그 스케일(서울 5~95% 구간), 100m 안 S-DoT가 있으면 0.4·실측(1→30 lux 로그) + 0.6·env",
+    "crowd_score": "활동인구 밀도(시간대 평균 − 새벽 3~5시 평균, 명/km²)의 서울 전체 동×시간대 로그 점수(0명=0점, 서울 상위 5%=100점)"
+  },
+  "validation": {
+    "light": {
+      "n_sensors": 843,
+      "n_nonzero": 315,
+      "stage1_nasa_vs_sdot": 0.05,
+      "stage1_nasa_vs_sdot_nonzero": 0.016,
+      "shop_proxy_vs_sdot": 0.134,
+      "consistency_shop_vs_nasa_500m": 0.853,
+      "stage2_downscaled_vs_sdot_by_alpha": {
+        "0.1": 0.119,
+        "0.25": 0.122,
+        "0.5": 0.123,
+        "1": 0.119,
+        "2": 0.111,
+        "4": 0.096,
+        "8": 0.081
+      },
+      "stage2_cv_rho_mean": 0.117,
+      "stage1_cv_rho_mean": 0.047,
+      "alpha_selected": 0.5,
+      "stage2_nonzero": 0.105,
+      "stage2_vs_sdot_evening": 0.139,
+      "stage2_vs_sdot_dawn": 0.092
+    },
+    "noise": {
+      "day": {
+        "n": 1017,
+        "with_neighbor_600m": 898,
+        "rho_shop_potential": 0.05,
+        "rho_loo_idw": 0.113,
+        "rho_blend_mvp_0.4_0.6": 0.109,
+        "rho_blend_distance": 0.137,
+        "mae_mean_baseline": 6.68,
+        "mae_env_only": 6.69,
+        "mae_blend_mvp": 6.77,
+        "mae_blend_distance": 6.7,
+        "env_fit": [
+          47.68,
+          0.874
+        ]
+      },
+      "evening": {
+        "n": 998,
+        "with_neighbor_600m": 878,
+        "rho_shop_potential": 0.077,
+        "rho_loo_idw": 0.133,
+        "rho_blend_mvp_0.4_0.6": 0.13,
+        "rho_blend_distance": 0.161,
+        "mae_mean_baseline": 6.69,
+        "mae_env_only": 6.7,
+        "mae_blend_mvp": 6.75,
+        "mae_blend_distance": 6.67,
+        "env_fit": [
+          47.14,
+          1.099
+        ]
+      },
+      "night": {
+        "n": 1002,
+        "with_neighbor_600m": 880,
+        "rho_shop_potential": 0.067,
+        "rho_loo_idw": 0.143,
+        "rho_blend_mvp_0.4_0.6": 0.139,
+        "rho_blend_distance": 0.168,
+        "mae_mean_baseline": 6.46,
+        "mae_env_only": 6.47,
+        "mae_blend_mvp": 6.45,
+        "mae_blend_distance": 6.4,
+        "env_fit": [
+          45.39,
+          1.363
+        ]
+      },
+      "dawn": {
+        "n": 1009,
+        "with_neighbor_600m": 888,
+        "rho_shop_potential": 0.052,
+        "rho_loo_idw": 0.167,
+        "rho_blend_mvp_0.4_0.6": 0.162,
+        "rho_blend_distance": 0.181,
+        "mae_mean_baseline": 5.84,
+        "mae_env_only": 5.82,
+        "mae_blend_mvp": 5.75,
+        "mae_blend_distance": 5.73,
+        "env_fit": [
+          43.81,
+          1.805
+        ]
+      }
+    }
+  },
+  "stats": {
+    "sdot_rows": 393525,
+    "sdot_night_lux_over_1000_removed": 140,
+    "sdot_sensors": 1169,
+    "sdot_night_lux_zero_ratio": 0.453,
+    "population_days_used": 26,
+    "crowd_scale_active_density_p95": 8960.9,
+    "crowd_note": "crowd_score = 활동인구(시간대 평균 − 새벽 3~5시 평균) 밀도의 서울 전체 동×시간대 로그 점수(0명=0점, 서울 상위 5%=100점)",
+    "shops_total": 552422,
+    "shops_by_group": {
+      "other": 275640,
+      "food": 112326,
+      "retail": 101612,
+      "bar": 15123,
+      "latenight": 14365,
+      "excluded": 11055,
+      "delivery": 9634,
+      "leisure": 7801,
+      "karaoke": 4776,
+      "club": 90
+    },
+    "light_scale_log10_p5_p95": [
+      0.812,
+      2.247
+    ]
+  },
+  "sources": [
+    "서울 열린데이터광장 스마트서울 도시데이터 센서(S-DoT) 환경정보(실시간), 2026-10-05~10-18 (공공누리 1유형)",
+    "서울 열린데이터광장 행정동별 서울 생활인구(250m) 내국인·장기외국인·단기외국인, 2026년 9월",
+    "NASA Black Marble VNP46A3 (VIIRS DNB 월간, 15 arc-second ≈ 460m), 12개월 평균",
+    "소상공인시장진흥공단 상가(상권)정보 서울, 2026-09",
+    "행정동 경계: vuski/admdongkor ver20260701"
+  ]
+}

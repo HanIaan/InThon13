@@ -36,22 +36,21 @@ const MAP_BOUNDS: L.LatLngBoundsExpression = [
   [BOUNDS.north, BOUNDS.east],
 ];
 
-// 격자 한 칸을 한 픽셀로 그리고, 브라우저 확대와 CSS 흐림으로 부드럽게 만든다.
+// 격자가 지도와 살짝 기울어 있어 칸마다 조금 크게 그려 틈을 메우고, CSS 흐림으로 부드럽게 만든다.
 function heatImage(cells: Cell[], scores: Map<string, number>) {
+  const scale = 4;
   const canvas = document.createElement("canvas");
-  canvas.width = COLS;
-  canvas.height = ROWS;
+  canvas.width = COLS * scale;
+  canvas.height = ROWS * scale;
   const ctx = canvas.getContext("2d")!;
-  const image = ctx.createImageData(COLS, ROWS);
   for (const cell of cells) {
     const score = scores.get(cell.id);
     if (score === undefined) continue;
-    const col = Math.round((cell.lng - BOUNDS.west) / CELL.lng);
-    const row = ROWS - 1 - Math.round((cell.lat - BOUNDS.south) / CELL.lat);
-    const at = (row * COLS + col) * 4;
-    image.data.set([...restColor(score), 255], at);
+    const col = (cell.lng - BOUNDS.west) / CELL.lng + 0.5;
+    const row = ROWS - 0.5 - (cell.lat - BOUNDS.south) / CELL.lat;
+    ctx.fillStyle = `rgb(${restColor(score).join(",")})`;
+    ctx.fillRect((col - 0.6) * scale, (row - 0.6) * scale, 1.2 * scale, 1.2 * scale);
   }
-  ctx.putImageData(image, 0, 0);
   return canvas.toDataURL();
 }
 

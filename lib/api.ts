@@ -1,6 +1,6 @@
 import type { Sensitivity, Slot } from "./rest";
 
-// 백엔드 연동 가이드 기준의 클라이언트다. 주소가 없으면 화면은 예시 데이터로 동작한다.
+// 백엔드 연동 가이드 기준의 클라이언트다. 주소가 없으면 화면은 저장된 격자 데이터로 동작한다.
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
 export type DataStatus = "mock" | "estimated" | "measured" | "missing";
@@ -79,7 +79,7 @@ const ERROR_TEXT: Record<string, string> = {
 
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) return ERROR_TEXT[error.code] ?? error.message;
-  return "서버에 연결하지 못해 예시 데이터를 보여 드려요";
+  return "서버에 연결하지 못해 저장된 데이터를 보여 드려요";
 }
 
 const INDICATOR_TEXT: Record<string, string> = { not_applicable: "야간 전용", missing: "데이터 없음" };

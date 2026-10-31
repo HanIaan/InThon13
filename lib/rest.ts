@@ -34,7 +34,9 @@ export function burdenAt(burdens: Record<Slot, Burden>, hour: number): Burden {
   const [toHour, toSlot] = ANCHORS[next];
   const t = (hour - fromHour) / (toHour - fromHour);
   const mix = (sense: Sense) => Math.round(burdens[fromSlot][sense] * (1 - t) + burdens[toSlot][sense] * t);
-  return { sound: mix("sound"), light: slotOf(hour) === "day" ? 0 : mix("light"), crowd: mix("crowd") };
+  // 낮에는 빛 지표가 없어 저녁·새벽 값으로 낮추지 않도록 반대쪽 시간대 값을 그대로 쓴다.
+  const light = fromSlot === "day" ? burdens[toSlot].light : toSlot === "day" ? burdens[fromSlot].light : mix("light");
+  return { sound: mix("sound"), light: slotOf(hour) === "day" ? 0 : light, crowd: mix("crowd") };
 }
 
 export const SENSE_LABEL: Record<Sense, string> = { sound: "소리", light: "빛", crowd: "혼잡" };

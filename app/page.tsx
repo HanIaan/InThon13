@@ -222,7 +222,7 @@ export default function Home() {
       else setToast("주거 시설만 선택할 수 있어요");
       return;
     }
-    if (!nearestToPoint(cells, next.lat, next.lng, 0.7)) {
+    if (!nearestToPoint(cells, next.lat, next.lng, 0.2)) {
       setToast("안암동 일대만 볼 수 있어요");
       return;
     }
@@ -254,8 +254,8 @@ export default function Home() {
   const lightOff = !isHome && slot === "day";
   const live = Boolean(API_BASE && grid);
   const hasStatus = (value: string) => grid?.features.some((f) => f.properties.data_status === value);
-  const isDemo = !live || grid?.meta?.data_mode === "mock" || hasStatus("mock");
-  const badge = isDemo ? "데모 데이터" : hasStatus("estimated") ? "추정" : "실제 데이터";
+  const isDemo = live && (grid?.meta?.data_mode === "mock" || hasStatus("mock"));
+  const badge = isDemo ? "데모 데이터" : "추정 데이터";
 
   // 지금 정보를 보여 줄 대상: 주거 건물, 추천 장소, 직접 고른 위치 중 하나다.
   const found = lookup?.key === lookupKey ? lookup : null;
@@ -321,10 +321,16 @@ export default function Home() {
     .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
   const levelOf = (sense: Sense) => {
     if (!target || !burden) return "-";
-    if (!isHome) return sense === "light" && lightOff ? "야간 전용" : level(burden[sense]);
+    if (!isHome) {
+      if (sense === "sound") return `약 ${target.cell.noiseDb[slot]}dB`;
+      return sense === "light" && lightOff ? "야간 전용" : level(burden[sense]);
+    }
     const key = sense === "sound" ? "noise" : sense;
+    if (sense === "sound" && !detail) return `약 ${target.cell.noiseDb.night}dB`;
     return indicatorText(detail?.indicators?.[key]) ?? level(target.cell.burdens.night[sense]);
   };
+
+  const confidenceLabel = (value: number) => (value >= 0.7 ? "높음" : value >= 0.5 ? "보통" : "낮음");
 
   const sliders = SENSES.map((s) => (
     <label key={s} className="range">
@@ -365,7 +371,7 @@ export default function Home() {
         <button role="tab" aria-selected={isHome} onClick={() => setTab("home")}>주거</button>
       </div>
 
-      <p className={`badge glass ${badge === "실제 데이터" ? "" : "demo"}`}>{badge}</p>
+      <p className={`badge glass ${isDemo ? "demo" : ""}`}>{badge}</p>
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
       {!up && (
@@ -535,6 +541,10 @@ export default function Home() {
                     {isHome ? sleepBlocker(target.cell.burdens.night, sensitivity) : explain(burden!, sensitivity, score ?? 0)}
                   </p>
                   {isHome && detail?.notes?.map((note) => <p className="data-note" key={note}>{note}</p>)}
+                  <p className="data-note">
+                    {target.cell.area} · {target.cell.sensorM === null ? "600m 안에 소음 센서 없음" : `가까운 소음 센서 ${Math.round(target.cell.sensorM)}m`}
+                    {" · "}신뢰도 {confidenceLabel(target.cell.confidence.sound)}
+                  </p>
                   <dl className="levels">
                     {SENSES.map((s) => (
                       <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>

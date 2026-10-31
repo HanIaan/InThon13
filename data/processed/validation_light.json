@@ -1,0 +1,63 @@
+{
+  "n_sensors": 1164,
+  "point_level": {
+    "stage1_nasa": 0.048,
+    "stage2_downscaled": 0.123
+  },
+  "dong_level": {
+    "n_dong": 422,
+    "stage1_nasa": 0.07,
+    "stage2_downscaled": 0.104
+  },
+  "zone_medians": {
+    "commercial_area": {
+      "lux_night": 0.75,
+      "nasa": 112.64,
+      "downscaled": 124.6
+    },
+    "industrial_area": {
+      "lux_night": 0.0,
+      "nasa": 84.59,
+      "downscaled": 76.84
+    },
+    "main_street": {
+      "lux_night": 3.0,
+      "nasa": 115.11,
+      "downscaled": 144.37
+    },
+    "parks": {
+      "lux_night": null,
+      "nasa": 113.72,
+      "downscaled": 64.81
+    },
+    "public_facilities": {
+      "lux_night": 0.0,
+      "nasa": 55.06,
+      "downscaled": 53.98
+    },
+    "residential_area": {
+      "lux_night": 0.0,
+      "nasa": 91.18,
+      "downscaled": 91.9
+    },
+    "roads_and_parks": {
+      "lux_night": 0.0,
+      "nasa": 86.96,
+      "downscaled": 75.89
+    },
+    "traditional_markets": {
+      "lux_night": 0.0,
+      "nasa": 97.43,
+      "downscaled": 114.15
+    }
+  },
+  "main_street_brighter_than_residential": {
+    "sdot_lux": 0.576,
+    "stage1_nasa": 0.719,
+    "stage2_downscaled": 0.724
+  },
+  "parks_darker_than_commercial": {
+    "stage1_nasa": 0.493,
+    "stage2_downscaled": 0.735
+  }
+}

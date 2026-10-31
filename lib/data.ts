@@ -1,20 +1,24 @@
-import osm from "./osm.json";
+import grid from "./grid.json";
 import homes from "./homes.json";
 import { burdenAt, restScore, slotOf, type Burden, type Sensitivity, type Slot } from "./rest";
 import spots from "./spots.json";
 
-// 도로와 비주거 영역만 실제 지도 데이터이고, 점수는 화면 확인용 예시다.
-// 공개 측정 데이터와 실측값으로 교체해야 한다.
+// 안암 일대 100m 격자다. 소음·빛·혼잡은 공공데이터 기반 추정값이고, 높을수록 부담이 크다.
 export type Cell = {
   id: string;
   lat: number;
   lng: number;
+  dong: string;
   area: string;
+  gu: string;
   burdens: Record<Slot, Burden>;
+  noiseDb: Record<Slot, number>;
+  sensorM: number | null;
+  confidence: Burden;
 };
 
-// 위도·경도 약 50m 간격
-export const CELL = { lat: 0.00045, lng: 0.00057 };
+// 위도·경도 약 100m 간격
+export const CELL = { lat: 0.0009, lng: 0.001134 };
 export const BOUNDS = { south: 37.5745, north: 37.5985, west: 127.0145, east: 127.0445 };
 
 const HUBS = [
@@ -31,38 +35,10 @@ const HUBS = [
 export const PLACES = HUBS.map((h) => h.name);
 export const PLACE_POINTS = HUBS.filter((h) => h.power >= 0.85);
 
-const ROADS = osm.roads as { line: [number, number][]; power: number }[];
-
-// 학교, 공원, 숲은 주거 공간이 아니므로 쉼 지수 비교에서 뺀다.
-const EXCLUDED = (osm.excluded as [number, number][][]).filter((poly) => {
-  const [first, last] = [poly[0], poly[poly.length - 1]];
-  return first[0] === last[0] && first[1] === last[1];
-});
-
 const KM = { lat: 111, lng: 88 };
 
 const km = (aLat: number, aLng: number, bLat: number, bLng: number) =>
   Math.hypot((aLat - bLat) * KM.lat, (aLng - bLng) * KM.lng);
-
-function segmentDistance(lat: number, lng: number, a: [number, number], b: [number, number]) {
-  const ax = (a[1] - lng) * KM.lng;
-  const ay = (a[0] - lat) * KM.lat;
-  const dx = (b[1] - a[1]) * KM.lng;
-  const dy = (b[0] - a[0]) * KM.lat;
-  const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
-  return Math.hypot(ax + dx * t, ay + dy * t);
-}
-
-function roadEffect(lat: number, lng: number) {
-  let effect = 0;
-  for (const road of ROADS) {
-    for (let i = 0; i < road.line.length - 1; i++) {
-      const d = segmentDistance(lat, lng, road.line[i], road.line[i + 1]);
-      effect = Math.max(effect, road.power * Math.exp(-d / 0.06));
-    }
-  }
-  return effect;
-}
 
 function inside(lat: number, lng: number, poly: [number, number][]) {
   let hit = false;
@@ -72,50 +48,6 @@ function inside(lat: number, lng: number, poly: [number, number][]) {
     if (oi > lng !== oj > lng && lat < ((aj - ai) * (lng - oi)) / (oj - oi) + ai) hit = !hit;
   }
   return hit;
-}
-
-const noise = (lat: number, lng: number) => {
-  const v = Math.sin(lat * 2917.3 + lng * 1431.7) * 43758.5;
-  return v - Math.floor(v);
-};
-
-const SLOT_SHAPE: Record<Slot, { sound: number; light: number; crowd: number }> = {
-  day: { sound: 1, light: 0, crowd: 0.85 },
-  evening: { sound: 1, light: 0.9, crowd: 1 },
-  night: { sound: 0.72, light: 1, crowd: 0.6 },
-  dawn: { sound: 0.42, light: 0.75, crowd: 0.15 },
-};
-
-function buildCell(lat: number, lng: number): Cell {
-  let hub = 0;
-  let area = HUBS[0];
-  let nearest = Infinity;
-  for (const h of HUBS) {
-    const d = km(lat, lng, h.lat, h.lng);
-    hub = Math.max(hub, h.power * Math.exp(-d / 0.2));
-    if (d < nearest) {
-      nearest = d;
-      area = h;
-    }
-  }
-  const road = roadEffect(lat, lng);
-  const jitter = noise(lat, lng) * 10;
-
-  const raw = {
-    sound: 18 + hub * 42 + road * 62 + jitter,
-    light: 15 + hub * 72 + road * 32 + jitter * 0.7,
-    crowd: 10 + hub * 86 + road * 12 + jitter * 0.5,
-  };
-  const burdens = {} as Record<Slot, Burden>;
-  for (const slot of Object.keys(SLOT_SHAPE) as Slot[]) {
-    const shape = SLOT_SHAPE[slot];
-    burdens[slot] = {
-      sound: Math.round(raw.sound * shape.sound),
-      light: Math.round(raw.light * shape.light),
-      crowd: Math.round(raw.crowd * shape.crowd),
-    };
-  }
-  return { id: `${lat.toFixed(5)}_${lng.toFixed(5)}`, lat, lng, area: area.name, burdens };
 }
 
 export function nearestCell(cells: Cell[], place: string) {
@@ -256,12 +188,12 @@ export function recommendSpots(
 }
 
 export function buildGrid(): Cell[] {
-  const cells: Cell[] = [];
-  for (let lat = BOUNDS.south; lat < BOUNDS.north; lat += CELL.lat) {
-    for (let lng = BOUNDS.west; lng < BOUNDS.east; lng += CELL.lng) {
-      if (EXCLUDED.some((poly) => inside(lat, lng, poly))) continue;
-      cells.push(buildCell(lat, lng));
-    }
-  }
-  return cells;
+  return (grid as (Omit<Cell, "burdens"> & { burdens: Record<Slot, { sound: number; light: number | null; crowd: number }> })[]).map(
+    (cell) => ({
+      ...cell,
+      burdens: Object.fromEntries(
+        Object.entries(cell.burdens).map(([slot, burden]) => [slot, { ...burden, light: burden.light ?? 0 }]),
+      ) as Record<Slot, Burden>,
+    }),
+  );
 }
