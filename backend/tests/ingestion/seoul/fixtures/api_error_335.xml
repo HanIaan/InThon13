@@ -1,0 +1,2 @@
+<RESULT><CODE>ERROR-335</CODE><MESSAGE><![CDATA[샘플데이터(샘플키:sample) 는 한번에 최대 5건을 넘을 수 없습니다.
+요청시작위치와  요청종료위치 값은 1 ~ 5 사이만 가능합니다.]]></MESSAGE></RESULT>

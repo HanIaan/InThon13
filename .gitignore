@@ -5,3 +5,13 @@ next-env.d.ts
 !.env.example
 *.tsbuildinfo
 .claude/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/raw/*
+!data/raw/.gitkeep
+node_modules/
+.DS_Store
+.env
+.env.*

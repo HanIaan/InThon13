@@ -1,0 +1,19 @@
+# Render Blueprint — public HTTPS hosting for the API (free plan, Docker).
+# Secrets are set in the Render dashboard (sync: false), never committed.
+services:
+  - type: web
+    name: sensory-map-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: DATA_MODE
+        value: mock
+      - key: CORS_PROD_ORIGINS
+        sync: false
+      - key: CORS_DEV_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
