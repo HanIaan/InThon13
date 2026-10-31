@@ -192,7 +192,7 @@ def test_nasa_pixel_only_provider(client):
     assert night_data["comfort_score"] is not None
     assert night_data["grade"] is not None
     assert night_data["data_status"] == "observed"
-    assert night_data["weights"]["light"] == 1.0
+    assert night_data["weights"]["light"] == 0.6  # default sensitivity 3 / 5
     assert night_data["weights"]["noise"] == 0.0
     assert night_data["weights"]["crowd"] == 0.0
     assert night_data["indicators"]["light"]["raw_unit"] == "nW/cm2/sr"
@@ -240,7 +240,7 @@ def test_single_available_indicator_renormalization(client):
     # comfort_score should be 100.0, not diluted by missing indicators
     assert data["comfort_score"] == 100.0
     assert data["grade"] == "A"
-    assert data["weights"]["noise"] == 1.0
+    assert data["weights"]["noise"] == 0.6  # default sensitivity 3 / 5
     assert data["weights"]["light"] == 0.0
     assert data["weights"]["crowd"] == 0.0
     assert data["data_status"] == "observed"

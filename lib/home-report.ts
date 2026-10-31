@@ -1,7 +1,7 @@
 import { getPosition, getTimes } from "suncalc";
 import seedRoads from "./roads.json";
 import seedSensors from "./sensors.json";
-import type { Sensitivity } from "./rest";
+import { SENSITIVITY_MAX, type Sensitivity } from "./rest";
 import { groundAt } from "./terrain";
 
 // 기획서 6-2~6-4장의 주거 계산이다. 층·창문 보정값은 기획서의 초기 추정치를 따른다.
@@ -95,13 +95,19 @@ export function sleepScore(noiseNight: number, light: number, sensitivity: Sensi
   return Math.round(Math.max(0, Math.min(100, 100 - noiseLoad - lightLoad)));
 }
 
-// 백엔드 comfort_score처럼 민감도 비율로 가중 평균하고, 모두 0이면 균등하게 본다.
+// 백엔드 comfort_score와 같은 부담 방식이다. 감각별 감점 = (100 − 점수) × 민감도/최대,
+// 종합 = 100 − (가장 큰 감점 + 0.25 × 나머지 평균 × (1 − 가장 큰 감점/100)).
+// 민감도를 낮추면 점수가 오르기만 한다. 모든 민감도가 0이면 점수를 매기지 않는다(null).
+// weight는 화면 민감도(0~SENSITIVITY_MAX)이고, 값이 없는 항목은 넘기지 않는다.
 export type HomePart = { name: string; score: number; weight: number };
+const REST_SHARE = 0.25;
 
 export function homeTotal(parts: HomePart[]) {
-  const sum = parts.reduce((total, part) => total + part.weight, 0);
-  const counted = sum ? parts : parts.map((part) => ({ ...part, weight: 1 }));
-  return Math.round(counted.reduce((total, part) => total + part.score * part.weight, 0) / (sum || parts.length));
+  if (!parts.some((part) => part.weight > 0)) return null;
+  const costs = parts.map((part) => (100 - part.score) * (part.weight / SENSITIVITY_MAX)).sort((a, b) => b - a);
+  const [worst, ...rest] = costs;
+  const extra = rest.length ? REST_SHARE * (rest.reduce((a, b) => a + b, 0) / rest.length) * (1 - worst / 100) : 0;
+  return Math.round(Math.max(0, Math.min(100, 100 - worst - extra)));
 }
 
 export function daylightScore(winterMinutes: number) {

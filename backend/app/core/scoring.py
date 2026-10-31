@@ -9,6 +9,9 @@ indicator and time slot. Raw values at the 5th..95th percentiles of Seoul cells
 (calibration_seoul.json, built by scripts/calibrate_seoul.py) are interpolated linearly:
 p5 -> 100, p50 -> 50, p95 -> 0, clipped outside. Units/slots missing from the calibration
 (e.g. mock lux) fall back to the fixed ranges below.
+
+Personalisation is a burden model (see weights_for): each sense subtracts its burden
+(100 - score) scaled by the user's sensitivity, so a less sensitive user never scores lower.
 """
 from __future__ import annotations
 
@@ -22,6 +25,7 @@ from app.contracts.constants import (
     GRADE_A_MIN,
     GRADE_B_MIN,
     LIGHT_APPLICABLE_SLOTS,
+    SENSITIVITY_MAX,
     DataStatus,
     Grade,
     Indicator,
@@ -99,20 +103,34 @@ def indicator_score(indicator: Indicator, value: IndicatorValue, time_slot: Time
     return round(_log(value.raw_value, *CROWD_DENSITY_RANGE), 1)
 
 
+REST_SHARE = 0.25  # how much the other senses add on top of the worst one
+
+
 def weights_for(scores: dict[Indicator, float | None], sens: dict[Indicator, int]) -> dict[Indicator, float]:
-    """Normalised weights. Only indicators the user selected (sensitivity > 0) AND that have
-    data are used, renormalised among themselves. If the user selected indicators but none
-    of them has data, all weights are 0 (-> comfort_score null): we never substitute other
-    senses for the one the user cares about. All-zero sensitivities -> equal weights over
-    indicators with data."""
+    """Burden multipliers (2026-11-01): ``sensitivity / SENSITIVITY_MAX`` for each indicator
+    with data, 0 otherwise. Sensitivity says how much a sense bothers the user, not how the
+    senses share a fixed budget. If no indicator the user selected (sensitivity > 0) has data —
+    including all-zero sensitivities — every multiplier is 0 and comfort_score is null: we never
+    score a place on senses the user did not ask about or that were not measured."""
     usable = [k for k, s in scores.items() if s is not None]
-    selected = [k for k in scores if sens[k] > 0]
-    if selected:
-        chosen = {k: float(sens[k]) for k in selected if k in usable}
-    else:
-        chosen = {k: 1.0 for k in usable}
-    total = sum(chosen.values())
-    return {k: (chosen.get(k, 0.0) / total if total else 0.0) for k in scores}
+    if not any(sens[k] > 0 for k in usable):
+        return {k: 0.0 for k in scores}
+    return {k: (sens[k] / SENSITIVITY_MAX if k in usable else 0.0) for k in scores}
+
+
+def burden_comfort(scores: dict[Indicator, float | None], weights: dict[Indicator, float]) -> float | None:
+    """comfort = 100 - (worst + REST_SHARE * mean(others) * (1 - worst / 100)).
+
+    Each sense costs ``(100 - score) * multiplier``. The worst one counts fully and the others
+    add a share of what is left, so: lowering a sensitivity never lowers the score; one sense
+    alone uses the whole 0-100 range; several bad senses cost a little more than one; the total
+    never passes 100. Indicators without data are left out rather than counted as perfect."""
+    costs = sorted(((100.0 - scores[k]) * w for k, w in weights.items() if scores[k] is not None), reverse=True)
+    if not any(weights.values()):
+        return None
+    worst, rest = costs[0], costs[1:]
+    extra = REST_SHARE * (sum(rest) / len(rest)) * (1 - worst / 100.0) if rest else 0.0
+    return _clip(100.0 - worst - extra)
 
 
 def grade_for(score: float | None) -> Grade | None:
@@ -147,8 +165,9 @@ class ScoredCell:
         self.weights = weights_for(self.scores, sens)
         usable = [k for k, w in self.weights.items() if w > 0]
         if usable:
-            self.comfort_score = round(sum(self.weights[k] * self.scores[k] for k in usable), 1)
-            self.confidence = round(sum(self.weights[k] * values[k].confidence for k in usable), 2)
+            self.comfort_score = round(burden_comfort(self.scores, self.weights), 1)
+            total = sum(self.weights[k] for k in usable)
+            self.confidence = round(sum(self.weights[k] * values[k].confidence for k in usable) / total, 2)
         else:
             self.comfort_score = None
             self.confidence = 0.0

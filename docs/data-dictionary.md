@@ -24,9 +24,9 @@
 - **`method`로 구분하는 관측 유형**: `direct` = 격자 안 센서 직접관측(`observed`), `idw` = 주변 센서 공간 보간(`estimated`), `pixel_overlay` = 위성 픽셀 중첩(`estimated`), `areal_weighting` = 행정동 통계 면적 배분(`estimated`), `null` = 결측.
 - **혼잡도는 2026년 7월(2026-07-25~31) 생활인구 기준의 과거 자료**입니다. 서울시 행정동 생활인구 시계열이 2026-07-31에 종료됐기 때문이며, inspect `notes`와 `period_start`/`period_end`에 명시됩니다.
 - **지표별 품질 플래그**: `noise_*` 플래그는 소음만, `light_*` 플래그는 조도만 제외합니다. `no_valid_location`, `duplicate_merged`는 행 전체에 적용됩니다. 조도 문제 때문에 정상 소음값을 버리지 않습니다.
-- 개인화 점수 `comfort_score` = Σ(가중치 × 지표 점수), 가중치는 `docs/api-contract.md`의 민감도 규칙을 따릅니다.
+- 개인화 점수 `comfort_score` = 100 − (가장 큰 감각 감점 + 0.25 × 나머지 감점 평균 × (1 − 가장 큰 감점/100)), 감각별 감점 = (100 − 지표 점수) × 민감도/5. 규칙은 `docs/api-contract.md`의 "민감도 → 부담"을 따릅니다.
 - 등급: A ≥ 70, B ≥ 40, C < 40.
-- `confidence` (0~1) = 적용 가중치로 가중평균한 지표별 신뢰도. 보정된 확률이 아닌 휴리스틱입니다 (구현: `services/precompute.py`).
+- `confidence` (0~1) = 민감도 배율로 가중평균한 지표별 신뢰도. 보정된 확률이 아닌 휴리스틱입니다 (구현: `services/precompute.py`).
   - 소음(S-DoT): `직접성 × (0.5 + 0.5·min(센서 수/3, 1)) × (0.5 + 0.5·min(표본 시간 수/24, 1))`. 직접성 = 격자 내 실측 위치 1.0, 지오코딩 위치 0.75, IDW `0.7 × (1 − 0.5 × 최근접거리/1000m)`.
   - 소음 공간 처리: 격자 안에 센서가 있으면 `direct`/`observed`, 없으면 반경 1km 내 최대 8개 센서 역거리제곱 가중(`idw`/`estimated`), 1km 내 센서가 없으면 `missing`.
   - 혼잡: 행정동 밀도를 격자와의 교차 면적으로 배분(`areal_weighting`/`estimated`). 신뢰도 `0.65 × 유효 면적 비율 × min(1, 시간 행 수/기대 시간 수)`.

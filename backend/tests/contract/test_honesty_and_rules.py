@@ -53,61 +53,30 @@ def test_daytime_light_indicator_exclusion(client):
     assert light_ind["status"] == "not_applicable"
 
 
-def test_all_zero_sensitivities_uses_equal_weights(client):
-    """When all sensitivities are 0, weights must be equal across usable indicators."""
-    # At night (3 usable indicators: noise, light, crowd)
-    r_night = client.get(
-        "/api/v1/grid",
-        params={
-            "bbox": "126.97,37.55,127.00,37.58",
-            "time_slot": "night",
-            "sound_sensitivity": 0,
-            "light_sensitivity": 0,
-            "crowd_sensitivity": 0,
-        },
-    )
-    assert r_night.status_code == 200
-    w_night = r_night.json()["meta"]["weights"]
-    assert w_night["noise"] == pytest.approx(0.333, abs=0.005)
-    assert w_night["light"] == pytest.approx(0.333, abs=0.005)
-    assert w_night["crowd"] == pytest.approx(0.333, abs=0.005)
+def test_all_zero_sensitivities_score_nothing(client):
+    """When all sensitivities are 0 the user asked about no sense: no weights, no score."""
+    for slot in ("night", "day"):
+        r = client.get(
+            "/api/v1/grid",
+            params={"bbox": "126.97,37.55,127.00,37.58", "time_slot": slot,
+                    "sound_sensitivity": 0, "light_sensitivity": 0, "crowd_sensitivity": 0},
+        )
+        assert r.status_code == 200
+        assert r.json()["meta"]["weights"] == {"noise": 0.0, "light": 0.0, "crowd": 0.0}
+        assert all(f["properties"]["comfort_score"] is None for f in r.json()["features"])
 
-    # By day (2 usable indicators: noise, crowd; light is not applicable)
-    r_day = client.get(
-        "/api/v1/grid",
-        params={
-            "bbox": "126.97,37.55,127.00,37.58",
-            "time_slot": "day",
-            "sound_sensitivity": 0,
-            "light_sensitivity": 0,
-            "crowd_sensitivity": 0,
-        },
-    )
-    assert r_day.status_code == 200
-    w_day = r_day.json()["meta"]["weights"]
-    assert w_day["noise"] == pytest.approx(0.5, abs=0.005)
-    assert w_day["crowd"] == pytest.approx(0.5, abs=0.005)
-    assert w_day["light"] == 0.0
-
-
-def test_weights_sum_to_one(client):
-    """Weights actually applied must sum to 1.0 (over usable indicators) within rounding tolerance."""
+def test_weights_are_sensitivity_over_max(client):
+    """Burden multipliers are sensitivity / 5 for applicable indicators (light is 0 by day)."""
     for slot in ("day", "evening", "night", "dawn"):
         res = client.get(
             "/api/v1/grid",
-            params={
-                "bbox": "126.97,37.55,127.00,37.58",
-                "time_slot": slot,
-                "sound_sensitivity": 4,
-                "light_sensitivity": 2,
-                "crowd_sensitivity": 5,
-            },
+            params={"bbox": "126.97,37.55,127.00,37.58", "time_slot": slot,
+                    "sound_sensitivity": 4, "light_sensitivity": 2, "crowd_sensitivity": 5},
         )
         assert res.status_code == 200
         w = res.json()["meta"]["weights"]
-        total = w["noise"] + w["light"] + w["crowd"]
-        assert total == pytest.approx(1.0, abs=0.005)
-
+        assert w["noise"] == pytest.approx(0.8) and w["crowd"] == pytest.approx(1.0)
+        assert w["light"] == (0.0 if slot == "day" else pytest.approx(0.4))
 
 def test_grade_thresholds_consistency(client):
     """Grade must follow: A (>=70.0), B (40.0..69.9), C (<40.0), or null if comfort_score is null."""

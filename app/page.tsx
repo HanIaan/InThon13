@@ -465,11 +465,12 @@ export default function Home() {
     return value === null ? "-" : level(100 - value);
   };
   const noisePoints = [noiseDayPoint, noiseNightPoint].filter((v): v is number => v !== null);
+  // 값이 없는 항목은 감점 계산에서 뺀다(0점이나 만점으로 채우지 않는다).
   const homeParts = [
-    { name: "일조", score: sunPoint ?? 0, weight: sensitivity.sun },
-    { name: "소음", score: noisePoints.length ? noisePoints.reduce((a, b) => a + b) / noisePoints.length : 0, weight: noisePoints.length ? sensitivity.sound : 0 },
-    { name: "빛공해", score: lightPoint ?? 0, weight: lightPoint === null ? 0 : sensitivity.light },
-  ];
+    sunPoint === null ? null : { name: "일조", score: sunPoint, weight: sensitivity.sun },
+    noisePoints.length ? { name: "소음", score: noisePoints.reduce((a, b) => a + b) / noisePoints.length, weight: sensitivity.sound } : null,
+    lightPoint === null ? null : { name: "빛공해", score: lightPoint, weight: sensitivity.light },
+  ].filter((part) => part !== null);
   const total = sunPoint === null || (API_BASE && !details) ? null : homeTotal(homeParts);
   const restNow = details?.[slot]?.comfort_score;
   const restValue = API_BASE ? (restNow == null ? null : Math.round(restNow)) : burden ? restScore(burden, sensitivity) : null;

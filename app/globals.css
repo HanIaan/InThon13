@@ -61,6 +61,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .notice { position: fixed; z-index: 45; top: 66px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 24px); padding: 8px 14px; border-radius: 12px; font-size: 13px; font-weight: 500; }
 .data-note { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .range input:disabled { opacity: 0.35; cursor: not-allowed; }
+.range-hint { margin-top: 10px; color: #b4373c; font-size: 12px; font-weight: 600; }
 
 .tune {
   position: fixed;

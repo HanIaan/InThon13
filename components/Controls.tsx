@@ -36,7 +36,10 @@ export function SensitivitySliders({
   lightOff: boolean;
   onChange: (next: Sensitivity) => void;
 }) {
-  return (isHome ? HOME_SLIDERS : REST_SLIDERS).map(({ id, label }) => (
+  const sliders = isHome ? HOME_SLIDERS : REST_SLIDERS;
+  // 민감도는 '얼마나 거슬리는지'라서 모두 0이면 매길 기준이 없다(서버도 점수를 비운다).
+  const allOff = sliders.every(({ id }) => !value[id] || (id === "light" && lightOff));
+  const ranges = sliders.map(({ id, label }) => (
     <label key={id} className="range">
       <span>{label} <b>{id === "light" && lightOff ? "야간 전용" : value[id]}</b></span>
       <input
@@ -50,6 +53,12 @@ export function SensitivitySliders({
       />
     </label>
   ));
+  return (
+    <>
+      {ranges}
+      {allOff && <p className="range-hint">감각을 하나 이상 켜야 점수를 매길 수 있어요.</p>}
+    </>
+  );
 }
 
 export function LocateButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {

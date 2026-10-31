@@ -40,11 +40,12 @@ def test_sensitivity_changes_score(client):
     assert a != b
 
 
-def test_all_zero_sensitivity_uses_equal_weights(client):
+def test_all_zero_sensitivity_scores_nothing(client):
     r = client.get("/api/v1/grid", params={"bbox": SMALL_BBOX, "time_slot": "night",
                                            "sound_sensitivity": 0, "light_sensitivity": 0, "crowd_sensitivity": 0})
-    w = r.json()["meta"]["weights"]
-    assert abs(w["noise"] - 1 / 3) < 1e-2 and abs(w["light"] - 1 / 3) < 1e-2
+    body = r.json()
+    assert body["meta"]["weights"] == {"noise": 0.0, "light": 0.0, "crowd": 0.0}
+    assert all(f["properties"]["comfort_score"] is None for f in body["features"])
 
 
 def test_day_excludes_light(client):

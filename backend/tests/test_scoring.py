@@ -35,10 +35,10 @@ def test_selected_indicator_missing_gives_null_score():
     assert sc.scores[N] is not None and sc.scores[C] is not None
 
 
-def test_renormalises_among_selected_indicators_with_data():
+def test_missing_selected_indicator_is_left_out_not_counted_as_perfect():
     sc = ScoredCell(cell(), sens(4, 5, 0))  # light selected but missing -> noise only
-    assert sc.weights == {N: 1.0, L: 0.0, C: 0.0}
-    assert sc.comfort_score == sc.scores[N]
+    assert sc.weights == {N: pytest.approx(0.8), L: 0.0, C: 0.0}
+    assert sc.comfort_score == pytest.approx(100 - 0.8 * (100 - sc.scores[N]), abs=0.05)
 
 
 def test_unselected_indicator_with_data_is_ignored():
@@ -46,15 +46,40 @@ def test_unselected_indicator_with_data_is_ignored():
     assert sc.weights[C] == 0 and sc.comfort_score == sc.scores[N]
 
 
-def test_all_zero_sensitivity_uses_equal_weights_over_available():
+def test_all_zero_sensitivity_gives_no_score():
     sc = ScoredCell(cell(), sens(0, 0, 0))
-    assert sc.weights[N] == pytest.approx(0.5) and sc.weights[C] == pytest.approx(0.5) and sc.weights[L] == 0
-    assert sc.comfort_score is not None
+    assert all(w == 0 for w in sc.weights.values())
+    assert sc.comfort_score is None and sc.data_status is DataStatus.missing
 
 
-def test_proportional_weights_when_all_available():
+def test_weights_are_sensitivity_multipliers():
     sc = ScoredCell(cell(light=_v(20.0, "nW/cm2/sr")), sens(1, 2, 1))
-    assert sc.weights == {N: pytest.approx(0.25), L: pytest.approx(0.5), C: pytest.approx(0.25)}
+    assert sc.weights == {N: pytest.approx(0.2), L: pytest.approx(0.4), C: pytest.approx(0.2)}
+
+
+def test_lowering_any_sensitivity_never_lowers_the_score():
+    c = cell(light=_v(120.0, "nW/cm2/sr"))
+    for n in range(6):
+        for l in range(6):
+            for k in range(6):
+                base = ScoredCell(c, sens(n, l, k)).comfort_score
+                for lower in ((n - 1, l, k), (n, l - 1, k), (n, l, k - 1)):
+                    if min(lower) < 0 or base is None:
+                        continue
+                    after = ScoredCell(c, sens(*lower)).comfort_score
+                    assert after is None or after >= base - 1e-9
+
+
+def test_one_sense_alone_uses_the_whole_range():
+    bright = ScoredCell(cell(light=_v(10_000.0, "nW/cm2/sr")), sens(0, 5, 0))
+    assert bright.scores[L] == 0 and bright.comfort_score == 0
+
+
+def test_two_bad_senses_cost_more_than_one_but_stay_in_range():
+    c = cell(light=_v(10_000.0, "nW/cm2/sr"))
+    one = ScoredCell(c, sens(0, 5, 0)).comfort_score
+    both = ScoredCell(c, sens(5, 5, 5)).comfort_score
+    assert 0 <= both <= one
 
 
 def test_light_only_in_daytime_is_null():
