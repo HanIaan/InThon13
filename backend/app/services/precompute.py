@@ -29,6 +29,12 @@ Rules (heuristics, not calibrated uncertainty probabilities):
   not decoded here (ingestion owns product-specific cloud filtering).
   Latest period_end per pixel is selected; ties prefer shortest period then
   product name. Pixel confidence = 0.55 * covered fraction (0.8 penalty for QF=1).
+* Opt-in L1 (``LIGHT_MODEL=poi``, default off => exact L0 behaviour): inside each valid
+  NASA pixel, cells get ``radiance * w / area_weighted_mean(w)`` where
+  ``w = exp(cell_exponent)`` comes from the versioned artifact in
+  ``app/modeling/light/artifacts/``. The area-weighted pixel mean is preserved. Status is
+  still ``estimated``; method is ``pixel_overlay_poi``. Missing pixels stay missing.
+  Evening/night/dawn share one monthly value; day stays not_applicable.
 """
 from __future__ import annotations
 
@@ -55,6 +61,15 @@ from app.contracts.data_interfaces import CellIndicators, EvidenceSensor, Indica
 from app.core import grid
 from app.db.processed import load_processed
 from app.db.snapshot import Snapshot, SNAPSHOT_NAME, write_snapshot
+from app.modeling.light.model import (
+    MODEL_NAME as LIGHT_POI_MODEL_NAME,
+    METHOD as LIGHT_POI_METHOD,
+    NOTE as LIGHT_POI_NOTE,
+    DominantPixelLayer,
+    LightPoiModel,
+    dasymetric_values,
+    light_model_name,
+)
 
 KST = ZoneInfo("Asia/Seoul")
 PROJECT = Transformer.from_crs(4326, 5179, always_xy=True).transform
@@ -209,6 +224,44 @@ class PixelField:
         )
 
 
+def poi_light_values(lights, cells):
+    """L1 (``LIGHT_MODEL=poi``): redistribute each valid pixel over its assigned cells.
+
+    ``cells`` is a sequence of (grid_id, polygon). The pixel mean is preserved over the
+    cells assigned to each pixel; cells without a valid overlapping pixel are omitted and
+    stay missing. Deterministic: the artifact carries every cell weight exponent.
+    """
+    model = LightPoiModel.load()
+    layer = DominantPixelLayer(lights)
+    assignments, chosen = [], {}
+    for gid, polygon in cells:
+        assignment = layer.assign(polygon)
+        if assignment is None:
+            continue
+        chosen[gid] = assignment
+        assignments.append({
+            "grid_id": gid,
+            "pixel_id": assignment.record.pixel_id,
+            "radiance": float(assignment.record.radiance),
+            "weight": model.weight(gid),
+            "overlap_area": assignment.overlap_area,
+        })
+    values = dasymetric_values(assignments)
+    output = {}
+    for gid, assignment in chosen.items():
+        record = assignment.record
+        quality = 1.0 if record.quality_flag == 0 else 0.8
+        output[gid] = IndicatorValue(
+            values[gid], "nW/cm2/sr", DataStatus.estimated,
+            round(0.55 * min(1, assignment.covered_fraction) * quality * model.confidence_factor, 4),
+            source=SourceId.nasa_black_marble, method=LIGHT_POI_METHOD,
+            period_start=datetime.combine(record.period_start, time.min, KST),
+            period_end=datetime.combine(record.period_end + timedelta(days=1), time.min, KST),
+            note=LIGHT_POI_NOTE,
+        )
+    return output
+
+
 def _bounds(geometries):
     return tuple(unary_union(geometries).bounds) if geometries else None
 
@@ -270,6 +323,7 @@ def build_snapshot(directory, max_distance_m=1000.0):
     population = population_fields(data, dong_geoms)
     pixels = PixelField(data.lights)
     cells, grids = [], []
+    cell_inputs = []
     for ix, iy in grid.cells_in_bbox(extent):
         polygon = metric_cell(ix, iy)
         land_area = polygon.intersection(boundary).area
@@ -280,7 +334,12 @@ def build_snapshot(directory, max_distance_m=1000.0):
                           geometry=dict(type="Polygon", coordinates=grid.cell_polygon(ix, iy))))
         overlaps = [(codes[i], polygon.intersection(dong_geoms[codes[i]]).area) for i in dong_tree.query(polygon)]
         overlaps = [(code, area) for code, area in overlaps if area > 1e-6]
-        nasa = pixels.value(polygon)
+        cell_inputs.append((gid, ix, iy, polygon, land_area, overlaps))
+    poi_light = None
+    if light_model_name() == LIGHT_POI_MODEL_NAME:
+        poi_light = poi_light_values(data.lights, [(gid, polygon) for gid, _, _, polygon, _, _ in cell_inputs])
+    for gid, ix, iy, polygon, land_area, overlaps in cell_inputs:
+        nasa = poi_light.get(gid, missing()) if poi_light is not None else pixels.value(polygon)
         for slot in TimeSlot:
             noise = fields[slot, "noise"].value(ix, iy, max_distance_m)
             # One monthly NASA value for every applicable slot; S-DoT lux never enters the score.
