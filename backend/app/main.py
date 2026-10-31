@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -62,6 +63,15 @@ def create_app() -> FastAPI:
     async def _unhandled(_: Request, exc: Exception):
         log.exception("unhandled error")
         return _error(ErrorCode.internal_error, "internal server error")
+
+    @app.on_event("startup")
+    async def _warm_provider():
+        # Live data loads from PostGIS/SQLite in tens of seconds; do it before the first map request.
+        from app.api.deps import get_provider
+
+        warm = getattr(get_provider(), "warm", None)
+        if warm:
+            threading.Thread(target=warm, name="provider-warm", daemon=True).start()
 
     app.include_router(router, prefix=API_PREFIX)
     return app
