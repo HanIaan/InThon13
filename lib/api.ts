@@ -1,4 +1,4 @@
-import type { Sensitivity, Slot } from "./rest";
+import { SENSITIVITY_SCALE, type Sensitivity, type Slot } from "./rest";
 
 // 백엔드 연동 가이드 기준의 클라이언트다. 주소가 없으면 화면은 저장된 격자 데이터로 동작한다.
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
@@ -42,11 +42,12 @@ export class ApiError extends Error {
 }
 
 function query(slot: Slot, sensitivity: Sensitivity) {
+  const level = (value: number) => String(Math.round(value / SENSITIVITY_SCALE));
   return {
     time_slot: slot,
-    sound_sensitivity: String(sensitivity.sound),
-    light_sensitivity: String(sensitivity.light),
-    crowd_sensitivity: String(sensitivity.crowd),
+    sound_sensitivity: level(sensitivity.sound),
+    light_sensitivity: level(sensitivity.light),
+    crowd_sensitivity: level(sensitivity.crowd),
   };
 }
 

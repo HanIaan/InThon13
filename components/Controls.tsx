@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { searchPlaces, type SearchPlace } from "@/lib/kakao";
-import { hourLabel, SENSE_LABEL, slotOf, SLOTS, type Sense, type Sensitivity } from "@/lib/rest";
+import { hourLabel, SENSE_LABEL, SENSITIVITY_MAX, slotOf, SLOTS, type Sense, type Sensitivity } from "@/lib/rest";
 
 const REST_SLIDERS: { id: keyof Sensitivity; label: string }[] = (["sound", "light", "crowd"] as Sense[]).map((id) => ({ id, label: SENSE_LABEL[id] }));
 const HOME_SLIDERS: { id: keyof Sensitivity; label: string }[] = [
@@ -29,7 +29,7 @@ export function SensitivitySliders({
       <input
         type="range"
         min={0}
-        max={5}
+        max={SENSITIVITY_MAX}
         step={1}
         disabled={id === "light" && lightOff}
         value={value[id]}

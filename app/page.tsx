@@ -85,7 +85,7 @@ const DEFAULT_FLOOR = 3;
 
 export default function Home() {
   const [hour, setHour] = useState(23);
-  const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 4, light: 2, crowd: 3, sun: 3 });
+  const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 8, light: 4, crowd: 6, sun: 6 });
   const [point, setPoint] = useState(START_POINT);
   const [picked, setPicked] = useState(false);
   const [activeSpot, setActiveSpot] = useState<string | null>(null);
