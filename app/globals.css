@@ -280,20 +280,21 @@ html.locked { overflow: hidden; }
 .dayview { position: fixed; z-index: 100; inset: 0; overflow: hidden; background: #05070a; color: #fff; }
 .room-bg { position: absolute; inset: 0; filter: blur(46px) brightness(0.62); transform: scale(1.15); }
 .room-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.room { position: absolute; top: 50%; left: 50%; width: max(130vw, calc(62dvh * 1672 / 468)); aspect-ratio: 1672 / 468; transform: translate(-50%, -50%); }
+.room { position: absolute; z-index: 1; pointer-events: none; top: 50%; left: 50%; width: max(130vw, calc(62dvh * 1672 / 468)); aspect-ratio: 1672 / 468; transform: translate(-50%, -50%); }
 .room > img { position: absolute; inset: 0; width: 100%; height: 100%; }
-.room > img.view { inset: auto; }
 .sun-patch { mix-blend-mode: screen; transition: opacity 0.4s; }
-.dv-stage, .dv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.dv-canvas { background: #0b1018; }
-.dv-stage.hidden, .dv-canvas.hidden { visibility: hidden; }
-.dv-top { position: absolute; top: 12px; right: 14px; left: 18px; display: flex; align-items: center; gap: 12px; }
+.dv-stage { position: absolute; inset: 0; }
+.dv-canvas { position: absolute; background: #0b1018; cursor: grab; }
+.dv-stage.hidden, .room.hidden { visibility: hidden; }
+.dv-top { position: absolute; z-index: 2; top: 12px; right: 14px; left: 18px; display: flex; align-items: center; gap: 12px; }
 .dv-top p { flex: 1; min-width: 0; margin: 0; overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7); }
 .dv-close { flex: none; width: 36px; height: 36px; background: rgba(0, 0, 0, 0.45); border-radius: 50%; color: #fff; font-size: 20px; }
 .dayview .mode-switch { background: rgba(8, 10, 14, 0.5); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .dayview .mode-switch button { padding: 7px 12px; color: rgba(255, 255, 255, 0.82); font-size: 13px; }
 .dayview .mode-switch button.on { background: #fff; color: #101418; }
-.dv-panel { position: absolute; top: 62px; right: 14px; display: grid; gap: 12px; width: 236px; padding: 12px; background: rgba(8, 10, 14, 0.5); border-radius: 18px; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.dv-sound { padding: 8px 0; background: rgba(255, 255, 255, 0.12); border-radius: 10px; color: #fff; font-size: 13px; font-weight: 600; }
+.dv-sound.on { background: #fff; color: #101418; }
+.dv-panel { position: absolute; z-index: 2; top: 62px; right: 14px; display: grid; gap: 12px; width: 236px; padding: 12px; background: rgba(8, 10, 14, 0.5); border-radius: 18px; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .dv-panel .mode-switch { background: rgba(255, 255, 255, 0.1); }
 .dv-home { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dv-home .floor { color: rgba(255, 255, 255, 0.8); }
@@ -304,9 +305,10 @@ html.locked { overflow: hidden; }
 .dv-home .dial i { background: linear-gradient(#fff 50%, rgba(255, 255, 255, 0.3) 50%); }
 .dv-panel dl { display: grid; gap: 7px; margin: 0; font-size: 13px; }
 .dv-panel dl div { display: flex; justify-content: space-between; gap: 10px; }
-.dv-panel dt { color: rgba(255, 255, 255, 0.7); }
+.dv-panel dt { flex: none; color: rgba(255, 255, 255, 0.7); }
+.dv-panel dd { text-align: right; }
 .dv-panel dd { margin: 0; font-weight: 600; }
-.dv-bar { position: absolute; bottom: 16px; left: 50%; display: flex; align-items: center; gap: 12px; width: min(780px, calc(100vw - 24px)); padding: 8px 12px; background: rgba(8, 10, 14, 0.5); border-radius: 999px; font-size: 13px; transform: translateX(-50%); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.dv-bar { position: absolute; z-index: 2; bottom: 16px; left: 50%; display: flex; align-items: center; gap: 12px; width: min(780px, calc(100vw - 24px)); padding: 8px 12px; background: rgba(8, 10, 14, 0.5); border-radius: 999px; font-size: 13px; transform: translateX(-50%); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .dv-bar strong { font-size: 17px; font-variant-numeric: tabular-nums; }
 .dv-bar input { flex: 1; min-width: 60px; accent-color: #fff; }
 .dv-play { flex: none; width: 32px; height: 32px; background: #fff; border-radius: 50%; color: #101418; font-size: 12px; }
@@ -375,7 +377,7 @@ html.locked { overflow: hidden; }
   .dv-bar input { order: 5; flex-basis: 100%; }
   .dv-times { margin-left: auto; }
   .dv-panel { top: auto; right: 12px; bottom: 112px; left: 12px; width: auto; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px; }
-  .dv-panel .mode-switch, .dv-panel dl { grid-column: 1 / -1; }
+  .dv-panel .mode-switch, .dv-panel dl, .dv-sound { grid-column: 1 / -1; }
   .dv-panel dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 14px; font-size: 12px; }
   .dv-home { grid-column: 1 / -1; }
   .slot { min-height: 0; }

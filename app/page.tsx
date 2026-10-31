@@ -58,7 +58,7 @@ import {
   type Sensitivity,
   type Slot,
 } from "@/lib/rest";
-import { CELL_SIZE, DETAIL_ZOOM, loadBuildings, OVERVIEW_SIZE, useSeoul, type MapView } from "@/lib/seoul";
+import { CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, OVERVIEW_SIZE, useSeoul, type MapView } from "@/lib/seoul";
 import { useGlideScroll } from "@/lib/use-glide-scroll";
 
 // 역지오코딩 주소의 "안암동 안암동3가"처럼 겹치는 말과 건물 이름을 뺀다.
@@ -67,11 +67,17 @@ function tidyAddress(address: string, name?: string | null) {
   return parts.filter((part, i) => !parts[i + 1]?.startsWith(part)).join(" ");
 }
 
+// 건물명이 "바동"처럼 동 번호뿐이면 지번을 앞에 붙인다.
+function homeTitle(home: HomePlace) {
+  const place = home.address?.split(" ").slice(-2).join(" ");
+  if (home.name && home.name.length > 3) return home.name;
+  return [place, home.name].filter(Boolean).join(" ") || undefined;
+}
+
 const RestMap = dynamic(() => import("@/components/RestMap"), { ssr: false });
 const DayView = dynamic(() => import("@/components/DayView"), { ssr: false });
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
-const HOME_ZOOM = 15;
 const HOME_SEARCH_M = 1500;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
@@ -221,6 +227,13 @@ export default function Home() {
     };
   }, [isHome, home]);
 
+  // 첫 화면의 임시 건물을 건물 타일의 실제 건물로 바꾼다.
+  useEffect(() => {
+    if (home.id.startsWith("way") && anchorReady && homes.some((item) => !item.id.startsWith("way"))) {
+      chooseHome(nearestHome(homes, home.lat, home.lng));
+    }
+  }, [anchorReady, homes]);
+
   // 검색한 곳의 구역이 도착하면 가장 가까운 주거 건물을 고른다.
   useEffect(() => {
     if (!pendingHome || !anchorReady) return;
@@ -315,7 +328,7 @@ export default function Home() {
   const foundAddress = found ? tidyAddress(found.address ?? missing, found.name) : looking;
   const target = isHome
     ? {
-        title: home.name ?? found?.name ?? home.type,
+        title: homeTitle(home) ?? found?.name ?? home.type,
         line: `${home.type} · ${homeCell.area} 인근`,
         cell: homeCell,
         facts: [
@@ -519,7 +532,6 @@ export default function Home() {
           input={homeInput}
           maxFloor={Number(home.levels) || 30}
           buildings={buildings}
-          lightScore={lightPoint}
           onInput={setHomeInput}
           onClose={() => setDayOpen(false)}
         />

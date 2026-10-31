@@ -1,4 +1,4 @@
-// 서울을 구역으로 나눠 건물, 주거, 휴식 장소, 큰 도로를 받는다. 이미 받은 구역은 건너뛴다.
+// 서울을 구역으로 나눠 휴식 장소와 큰 도로를 받는다. 건물은 tools/build_app_buildings.py가 만든다.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 
@@ -56,7 +56,6 @@ function encode(geometry) {
   return flat;
 }
 
-const TYPE = { apartments: "아파트", dormitory: "기숙사", house: "주택", detached: "단독주택", terrace: "연립주택", semidetached_house: "연립주택", bungalow: "주택", residential: "주거 건물" };
 const kindOf = (tags) => (tags.amenity === "library" ? "도서관" : tags.amenity === "cafe" ? "카페" : "공원");
 const addressOf = (t) => t["addr:full"] ?? ([t["addr:city"], t["addr:district"], t["addr:street"], t["addr:housenumber"]].filter(Boolean).join(" ") || undefined);
 const round = (v) => Math.round(v * E5) / E5;
@@ -66,45 +65,38 @@ const fromAnam = (key) => Math.hypot(...key.split("_").map((v, i) => Number(v) -
 const list = [...tiles].sort((a, b) => fromAnam(a) - fromAnam(b));
 let done = 0;
 async function fetchTile(key, worker) {
-  const [homeFile, buildingFile] = [`${OUT}/${key}.json`, `${OUT}/${key}.b.json`];
+  const file = `${OUT}/${key}.json`;
   done++;
-  if (existsSync(homeFile) && existsSync(buildingFile)) return;
+  if (existsSync(file)) return;
   const [tx, ty] = key.split("_").map(Number);
-  const box = [
-    (TILE.south + ty * TILE.lat).toFixed(4),
-    (TILE.west + tx * TILE.lng).toFixed(4),
-    (TILE.south + (ty + 1) * TILE.lat).toFixed(4),
-    (TILE.west + (tx + 1) * TILE.lng).toFixed(4),
-  ].join(",");
-  const { elements } = await overpass(`[out:json][timeout:180];
-(
-  way["building"](${box});
-  way["highway"~"^(motorway|trunk|primary|secondary|tertiary)$"](${box});
-)->.ways;
-.ways out geom tags;
+  // 큰 요청은 서버가 거절해서 구역을 네 조각으로 나눠 받는다.
+  const elements = [];
+  for (const [qx, qy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+    const south = TILE.south + (ty + qy / 2) * TILE.lat;
+    const west = TILE.west + (tx + qx / 2) * TILE.lng;
+    const box = [south, west, south + TILE.lat / 2, west + TILE.lng / 2].map((v) => v.toFixed(4)).join(",");
+    const part = await overpass(`[out:json][timeout:120];
+way["highway"~"^(motorway|trunk|primary|secondary|tertiary)$"](${box});
+out geom tags;
 (
   nwr["leisure"~"^(park|garden)$"]["name"](${box});
   nwr["amenity"="library"]["name"](${box});
   node["amenity"="cafe"]["name"](${box});
 );
 out center tags;`, worker);
+    elements.push(...part.elements);
+    await wait(2000);
+  }
 
-  const homes = [];
-  const buildings = [];
   const roads = [];
   const spots = [];
   const seen = new Set();
+  const counted = new Set();
   for (const item of elements) {
     const t = item.tags ?? {};
-    if (item.type === "way" && t.building && item.geometry?.length > 3) {
-      const ring = encode(item.geometry);
-      buildings.push({ l: Number(t["building:levels"]) || 0, r: ring });
-      if (TYPE[t.building]) {
-        homes.push({ id: `way${item.id}`, name: t["name:ko"] ?? t.name, type: TYPE[t.building], levels: t["building:levels"], address: addressOf(t), r: ring });
-      }
-    } else if (item.type === "way" && t.highway && item.geometry?.length > 1) {
-      roads.push(encode(item.geometry));
-    }
+    if (counted.has(`${item.type}${item.id}`)) continue;
+    counted.add(`${item.type}${item.id}`);
+    if (item.type === "way" && t.highway && item.geometry?.length > 1) roads.push(encode(item.geometry));
     const [lat, lng] = [item.lat ?? item.center?.lat, item.lon ?? item.center?.lon];
     const name = t["name:ko"] ?? t.name;
     const isSpot = t.amenity === "library" || t.amenity === "cafe" || t.leisure === "park" || t.leisure === "garden";
@@ -113,9 +105,8 @@ out center tags;`, worker);
       spots.push({ id: `${item.type}${item.id}`, name, kind: kindOf(t), lat: round(lat), lng: round(lng), address: addressOf(t), hours: t.opening_hours, phone: t.phone ?? t["contact:phone"], website: t.website ?? t["contact:website"] });
     }
   }
-  writeFileSync(homeFile, JSON.stringify({ homes, spots, roads }));
-  writeFileSync(buildingFile, JSON.stringify(buildings));
-  console.log(`${done}/${list.length} ${key} 건물 ${buildings.length} 주거 ${homes.length} 장소 ${spots.length} 도로 ${roads.length}`);
+  writeFileSync(file, JSON.stringify({ spots, roads }));
+  console.log(`${done}/${list.length} ${key} 장소 ${spots.length} 도로 ${roads.length}`);
   await wait(3000);
 }
 

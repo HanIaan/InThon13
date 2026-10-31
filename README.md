@@ -39,3 +39,7 @@ cp .env.example .env.local
 - `lib/spots.json`: 휴식 장소, `node scripts/fetch-spots.mjs`로 생성
 - `lib/homes.json`: 주거 건물, `node scripts/fetch-homes.mjs`로 생성
 - 계산 방법과 한계: `docs/data-pipeline.md`
+
+## 데이터 출처
+
+건물 윤곽·층수·용도: 국토교통부 GIS건물통합정보(AL_D010, 2026-10-09), CC BY. `tools/build_app_buildings.py`로 `public/data/buildings`를 만든다.

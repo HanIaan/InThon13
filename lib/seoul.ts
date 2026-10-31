@@ -7,20 +7,26 @@ import type { Burden, Slot } from "./rest";
 const TILE = { lat: 0.04, lng: 0.05, south: 37.42, west: 126.76 };
 const SLOTS: Slot[] = ["day", "evening", "night", "dawn"];
 
+// 건물 타일은 약 500m 단위다. tools/build_app_buildings.py와 값을 맞춘다.
+const BUILDING_TILE = { lat: 0.0045, lng: 0.0057, south: 37.41, west: 126.76 };
+const HOME_TYPE: Record<number, string> = { 1: "단독주택", 2: "공동주택" };
+
 export const SEOUL = { south: 37.42, north: 37.71, west: 126.75, east: 127.2 };
 export const DETAIL_ZOOM = 13;
+export const HOME_ZOOM = 15;
 export const CELL_SIZE = { lat: 0.0009, lng: 0.001134 };
 export const OVERVIEW_SIZE = { lat: 0.0045, lng: 0.00567 };
 
 export type MapView = { south: number; north: number; west: number; east: number; zoom: number };
 type Row = (string | number | null)[];
-type OsmTile = { homes: (Omit<Home, "ring" | "lat" | "lng"> & { r: number[] })[]; spots: Spot[]; roads: number[][] };
+type OsmTile = { spots: Spot[]; roads: number[][] };
+type BuildingRow = [number, number, number[], number?, string?, string?];
 type Point = { lat: number; lng: number };
 
-function tilesIn(view: Omit<MapView, "zoom">) {
+function tilesIn(view: Omit<MapView, "zoom">, tile: typeof TILE = TILE) {
   const keys: string[] = [];
-  const first = { x: Math.floor((view.west - TILE.west) / TILE.lng), y: Math.floor((view.south - TILE.south) / TILE.lat) };
-  const last = { x: Math.floor((view.east - TILE.west) / TILE.lng), y: Math.floor((view.north - TILE.south) / TILE.lat) };
+  const first = { x: Math.floor((view.west - tile.west) / tile.lng), y: Math.floor((view.south - tile.south) / tile.lat) };
+  const last = { x: Math.floor((view.east - tile.west) / tile.lng), y: Math.floor((view.north - tile.south) / tile.lat) };
   for (let x = first.x; x <= last.x; x++) for (let y = first.y; y <= last.y; y++) keys.push(`${x}_${y}`);
   return keys;
 }
@@ -68,22 +74,23 @@ const load = <T,>(path: string): Promise<T> =>
     return res.json();
   });
 
-function decodeHome({ r, ...home }: OsmTile["homes"][number]): Home {
-  const ring = decodeRing(r);
-  const lat = ring.reduce((sum, p) => sum + p[0], 0) / ring.length;
-  const lng = ring.reduce((sum, p) => sum + p[1], 0) / ring.length;
-  return { ...home, ring, lat, lng };
+const loadBuildingRows = (key: string) => load<BuildingRow[]>(`/data/buildings/${key}.json`).catch(() => [] as BuildingRow[]);
+
+function decodeHomes(key: string, rows: BuildingRow[]) {
+  const list: Home[] = [];
+  rows.forEach(([floors, , flat, kind, name, address], i) => {
+    if (!kind) return;
+    const ring = decodeRing(flat);
+    const lat = ring.reduce((sum, p) => sum + p[0], 0) / ring.length;
+    const lng = ring.reduce((sum, p) => sum + p[1], 0) / ring.length;
+    list.push({ id: `b${key}_${i}`, name: name || undefined, type: HOME_TYPE[kind], levels: floors ? String(floors) : undefined, address, ring, lat, lng });
+  });
+  return list;
 }
 
-export async function loadBuildings(point: Point, margin = 0.009): Promise<Building[]> {
-  const lists = await Promise.all(
-    tilesIn(around(point, margin)).map((key) =>
-      load<{ l: number; r: number[] }[]>(`/data/osm/${key}.b.json`).catch(() => []),
-    ),
-  );
-  const list = lists.flat().map((b) => ({ levels: b.l || null, ring: decodeRing(b.r) }));
-  // 구역 파일이 아직 없으면 안암 일대 건물로 대신한다.
-  return list.length ? list : load<Building[]>("/buildings.json").catch(() => []);
+export async function loadBuildings(point: Point, margin = 0.006): Promise<Building[]> {
+  const lists = await Promise.all(tilesIn(around(point, margin), BUILDING_TILE).map(loadBuildingRows));
+  return lists.flat().map(([floors, height, flat]) => ({ levels: floors || null, height: height || undefined, ring: decodeRing(flat) }));
 }
 
 // 지도 영역과 anchor 주변 구역을 불러와, 지금까지 받은 데이터를 합쳐 돌려준다.
@@ -94,6 +101,7 @@ export function useSeoul(view: MapView | null, anchor: Point) {
   const [overview, setOverview] = useState<Cell[]>([]);
   const [ready, setReady] = useState<string[]>([]);
   const asked = useRef(new Set<string>());
+  const askedHomes = useRef(new Set<string>());
 
   useEffect(() => {
     load<Row[]>("/data/overview.json").then((rows) => setOverview(rows.map(decodeCell))).catch(() => {});
@@ -112,7 +120,7 @@ export function useSeoul(view: MapView | null, anchor: Point) {
       asked.current.add(key);
       Promise.all([
         load<Row[]>(`/data/grid/${key}.json`).catch(() => [] as Row[]),
-        load<OsmTile>(`/data/osm/${key}.json`).catch(() => ({ homes: [], spots: [], roads: [] }) as OsmTile),
+        load<OsmTile>(`/data/osm/${key}.json`).catch(() => ({ spots: [], roads: [] }) as OsmTile),
       ]).then(([rows, osm]) => {
         const nextCells = rows.map(decodeCell);
         addRoads(osm.roads.map(decodeRing));
@@ -120,19 +128,32 @@ export function useSeoul(view: MapView | null, anchor: Point) {
           const known = new Set(nextCells.map((cell) => cell.id));
           return [...list.filter((cell) => !known.has(cell.id)), ...nextCells];
         });
-        setHomes((list) => {
-          const known = new Set(osm.homes.map((home) => home.id));
-          return [...list.filter((home) => !known.has(home.id)), ...osm.homes.map(decodeHome)];
-        });
         setSpots((list) => {
           const known = new Set(osm.spots.map((spot) => spot.id));
           return [...list.filter((spot) => !known.has(spot.id)), ...osm.spots];
         });
-        setReady((list) => [...list, key]);
       });
     }
   }, [wanted]);
 
-  const anchorReady = tilesIn(around(anchor, 0)).every((key) => ready.includes(key));
+  const wantedHomes = useMemo(() => {
+    const keys = new Set(tilesIn(around(anchor, 0.002), BUILDING_TILE));
+    if (view && view.zoom >= HOME_ZOOM) for (const key of tilesIn(view, BUILDING_TILE)) keys.add(key);
+    return [...keys];
+  }, [anchor.lat, anchor.lng, view]);
+
+  useEffect(() => {
+    for (const key of wantedHomes) {
+      if (askedHomes.current.has(key)) continue;
+      askedHomes.current.add(key);
+      loadBuildingRows(key).then((rows) => {
+        const next = decodeHomes(key, rows);
+        setHomes((list) => [...list.filter((home) => !home.id.startsWith("way")), ...next]);
+        setReady((list) => [...list, key]);
+      });
+    }
+  }, [wantedHomes]);
+
+  const anchorReady = tilesIn(around(anchor, 0), BUILDING_TILE).every((key) => ready.includes(key));
   return { cells, homes, spots, overview, anchorReady };
 }

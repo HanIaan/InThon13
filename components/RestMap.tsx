@@ -178,6 +178,8 @@ export default function RestMap({
     map.current = instance;
     return () => {
       observer.disconnect();
+      instance.stop();
+      instance.off("moveend", sendView);
       instance.remove();
       map.current = null;
       pin.current = null;

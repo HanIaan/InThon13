@@ -6,7 +6,7 @@ import type { Sensitivity } from "./rest";
 // 기획서 6-2~6-4장의 주거 계산이다. 층·창문 보정값은 기획서의 초기 추정치를 따른다.
 export type Direction = "north" | "east" | "south" | "west";
 export type HomeInput = { floor: number; direction: Direction };
-export type Building = { levels: number | null; ring: [number, number][] };
+export type Building = { levels: number | null; height?: number; ring: [number, number][] };
 export type Sunlight = { minutes: number; start: string; end: string; slots: boolean[] };
 export type SunReport = { winter: Sunlight; missingLevels: number };
 
@@ -42,6 +42,15 @@ let sensors = seedSensors as Sensor[];
 
 export function addRoads(lines: [number, number][][]) {
   roads.push(...lines);
+}
+
+export function roadsAround(lat: number, lng: number, meters: number) {
+  return roads.filter((line) =>
+    line.some(([roadLat, roadLng]) => {
+      const { x, y } = toMeters({ lat, lng }, roadLat, roadLng);
+      return Math.hypot(x, y) < meters;
+    }),
+  );
 }
 
 export function setSensors(list: Sensor[]) {
@@ -129,6 +138,15 @@ function rayDistance(ring: { x: number; y: number }[], dx: number, dy: number) {
   return nearest;
 }
 
+function containsOrigin(ring: { x: number; y: number }[]) {
+  let hit = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [a, b] = [ring[i], ring[j]];
+    if (a.y > 0 !== b.y > 0 && 0 < ((b.x - a.x) * -a.y) / (b.y - a.y) + a.x) hit = !hit;
+  }
+  return hit;
+}
+
 function timeLabel(minutes: number) {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
@@ -166,13 +184,10 @@ function sunlightOn(date: string, window: { lat: number; lng: number; height: nu
 // 기획서 6-3: 창문에서 태양 쪽으로 선을 그어 주변 건물에 가리는지 10분 단위로 확인한다.
 export function sunReport(home: { lat: number; lng: number; ring: [number, number][] }, input: HomeInput, buildings: Building[], date: string = WINTER_SOLSTICE): SunReport {
   const around = buildings
-    .map((b) => ({ levels: b.levels, ring: b.ring.map(([lat, lng]) => toMeters(home, lat, lng)) }))
+    .map((b) => ({ levels: b.levels, height: b.height, ring: b.ring.map(([lat, lng]) => toMeters(home, lat, lng)) }))
     .filter((b) => b.ring.some((p) => Math.hypot(p.x, p.y) < SHADE_RANGE_M + 40))
-    .filter((b) => !b.ring.every((p, i) => {
-      const own = home.ring.at(i);
-      return own && Math.hypot(p.x - toMeters(home, own[0], own[1]).x, p.y - toMeters(home, own[0], own[1]).y) < 1;
-    }))
-    .map((b) => ({ height: (b.levels ?? UNKNOWN_LEVELS) * FLOOR_METERS, ring: b.ring, missing: b.levels === null }));
+    .filter((b) => !containsOrigin(b.ring))
+    .map((b) => ({ height: b.height ?? (b.levels ?? UNKNOWN_LEVELS) * FLOOR_METERS, ring: b.ring, missing: b.levels === null }));
   const window = { lat: home.lat, lng: home.lng, height: (input.floor - 1) * FLOOR_METERS + 1.5 };
   return {
     winter: sunlightOn(date, window, input.direction, around),
