@@ -36,9 +36,7 @@ def test_mock_day_light_only(client):
 
 def test_mock_night_light_only_scores(client):
     body = _get(client, "night", LIGHT_ONLY, lnglat=(126.978, 37.5665))
-    # b-home semantics: light at sensitivity 5 dominates, noise/crowd still count at minimum (0.25).
-    w = body["weights"]
-    assert body["comfort_score"] is not None and w["light"] > w["noise"] > 0 and w["light"] > w["crowd"] > 0
+    assert body["comfort_score"] == body["indicators"]["light"]["score"]
     assert not any("감각지수를 계산하지 않았습니다" in n for n in body["notes"])
 
 
