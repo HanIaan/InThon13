@@ -1,0 +1,326 @@
+{
+  "schema_version": 1,
+  "model_id": "noise_road_ridge",
+  "model_version": "1.0.0",
+  "created_at": "2026-11-01T04:19:14+09:00",
+  "status": "estimated",
+  "method": "model",
+  "source": "sdot",
+  "target": "S-DoT AVG_NIS time-slot mean dB residual vs IDW baseline",
+  "training": {
+    "period_start": "2026-10-11T15:00:00+00:00",
+    "period_end": "2026-10-18T14:00:00+00:00",
+    "sdot_rows": 1016,
+    "sensor_slot_rows": 4026,
+    "osm_cache": "seoul_roads.geojson",
+    "target": "S-DoT AVG_NIS time-slot mean dB",
+    "hyperparameters": {
+      "model": "Ridge",
+      "ridge_alpha": 1.0,
+      "per_time_slot": false,
+      "preprocessing": "median imputation then z-score standardization",
+      "target_form": "residual = observed dB - IDW baseline (a_pred)"
+    },
+    "cv": {
+      "scheme": "1km spatial block GroupKFold",
+      "folds": 5,
+      "seed": 42
+    }
+  },
+  "features": [
+    {
+      "name": "a_pred",
+      "kind": "baseline",
+      "description": "IDW baseline of model A (1 km, up to 8 sensors, 1/d^2)"
+    },
+    {
+      "name": "nearest_major_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_primary_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_secondary_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_tertiary_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_residential_road_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_rail_ground_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "nearest_rail_underground_m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "major_road_len_50m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "minor_road_len_50m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "major_road_len_100m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "minor_road_len_100m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "major_road_len_300m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "minor_road_len_300m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    },
+    {
+      "name": "rail_ground_len_300m",
+      "kind": "road",
+      "description": "OSM road/rail feature in EPSG:5179 metres (W4 definition)"
+    }
+  ],
+  "baseline": {
+    "primary": {
+      "max_distance_m": 1000.0,
+      "k": 8,
+      "power": 2.0
+    }
+  },
+  "confidence": {
+    "rule": "clip(1 - cv_mae_db / scale_db, min_confidence, max_confidence) * (fallback_conf_factor if fallback_used else 1)",
+    "scale_db": 12.0,
+    "min_confidence": 0.2,
+    "max_confidence": 0.9,
+    "fallback_conf_factor": 0.6
+  },
+  "slots": {
+    "day": {
+      "intercept": 36.18835675964388,
+      "weights": {
+        "a_pred": -0.7707639519575621,
+        "nearest_major_road_m": -0.0019285626572967235,
+        "nearest_primary_road_m": -0.00020640230527579564,
+        "nearest_secondary_road_m": 0.00020003065457808474,
+        "nearest_tertiary_road_m": -0.0025876617659494248,
+        "nearest_residential_road_m": -0.0014239469539067506,
+        "nearest_rail_ground_m": 0.0007855260244304237,
+        "nearest_rail_underground_m": -0.00041705906185122196,
+        "major_road_len_50m": 0.026097554884241595,
+        "minor_road_len_50m": -0.010179410339310196,
+        "major_road_len_100m": 0.0030749005121575947,
+        "minor_road_len_100m": -0.00150772319072359,
+        "major_road_len_300m": -0.0002049657807790607,
+        "minor_road_len_300m": 0.0003859442606615245,
+        "rail_ground_len_300m": 0.00026668857360510526
+      },
+      "impute": {
+        "a_pred": 47.15011647037926,
+        "nearest_major_road_m": 86.073811879258,
+        "nearest_primary_road_m": 281.72639193000526,
+        "nearest_secondary_road_m": 168.00634139086182,
+        "nearest_tertiary_road_m": 186.87602226524157,
+        "nearest_residential_road_m": 5.068856347668358,
+        "nearest_rail_ground_m": 1390.8985089972346,
+        "nearest_rail_underground_m": 279.7709307595739,
+        "major_road_len_50m": 0.0,
+        "minor_road_len_50m": 171.50410407265264,
+        "major_road_len_100m": 104.69362915591788,
+        "minor_road_len_100m": 555.6552978501891,
+        "major_road_len_300m": 1180.1186806571338,
+        "minor_road_len_300m": 4416.272705850473,
+        "rail_ground_len_300m": 0.0
+      },
+      "cv": {
+        "mae": 5.775078862722442,
+        "mae_std": 0.40599970092970367,
+        "rmse": 7.612198651538838,
+        "spearman": 0.31289228798679974,
+        "n": 935
+      }
+    },
+    "evening": {
+      "intercept": 36.18835675964388,
+      "weights": {
+        "a_pred": -0.7707639519575621,
+        "nearest_major_road_m": -0.0019285626572967235,
+        "nearest_primary_road_m": -0.00020640230527579564,
+        "nearest_secondary_road_m": 0.00020003065457808474,
+        "nearest_tertiary_road_m": -0.0025876617659494248,
+        "nearest_residential_road_m": -0.0014239469539067506,
+        "nearest_rail_ground_m": 0.0007855260244304237,
+        "nearest_rail_underground_m": -0.00041705906185122196,
+        "major_road_len_50m": 0.026097554884241595,
+        "minor_road_len_50m": -0.010179410339310196,
+        "major_road_len_100m": 0.0030749005121575947,
+        "minor_road_len_100m": -0.00150772319072359,
+        "major_road_len_300m": -0.0002049657807790607,
+        "minor_road_len_300m": 0.0003859442606615245,
+        "rail_ground_len_300m": 0.00026668857360510526
+      },
+      "impute": {
+        "a_pred": 47.15011647037926,
+        "nearest_major_road_m": 86.073811879258,
+        "nearest_primary_road_m": 281.72639193000526,
+        "nearest_secondary_road_m": 168.00634139086182,
+        "nearest_tertiary_road_m": 186.87602226524157,
+        "nearest_residential_road_m": 5.068856347668358,
+        "nearest_rail_ground_m": 1390.8985089972346,
+        "nearest_rail_underground_m": 279.7709307595739,
+        "major_road_len_50m": 0.0,
+        "minor_road_len_50m": 171.50410407265264,
+        "major_road_len_100m": 104.69362915591788,
+        "minor_road_len_100m": 555.6552978501891,
+        "major_road_len_300m": 1180.1186806571338,
+        "minor_road_len_300m": 4416.272705850473,
+        "rail_ground_len_300m": 0.0
+      },
+      "cv": {
+        "mae": 5.854612192300114,
+        "mae_std": 0.25061343877940967,
+        "rmse": 7.660620933486184,
+        "spearman": 0.31824905312189833,
+        "n": 924
+      }
+    },
+    "night": {
+      "intercept": 36.18835675964388,
+      "weights": {
+        "a_pred": -0.7707639519575621,
+        "nearest_major_road_m": -0.0019285626572967235,
+        "nearest_primary_road_m": -0.00020640230527579564,
+        "nearest_secondary_road_m": 0.00020003065457808474,
+        "nearest_tertiary_road_m": -0.0025876617659494248,
+        "nearest_residential_road_m": -0.0014239469539067506,
+        "nearest_rail_ground_m": 0.0007855260244304237,
+        "nearest_rail_underground_m": -0.00041705906185122196,
+        "major_road_len_50m": 0.026097554884241595,
+        "minor_road_len_50m": -0.010179410339310196,
+        "major_road_len_100m": 0.0030749005121575947,
+        "minor_road_len_100m": -0.00150772319072359,
+        "major_road_len_300m": -0.0002049657807790607,
+        "minor_road_len_300m": 0.0003859442606615245,
+        "rail_ground_len_300m": 0.00026668857360510526
+      },
+      "impute": {
+        "a_pred": 47.15011647037926,
+        "nearest_major_road_m": 86.073811879258,
+        "nearest_primary_road_m": 281.72639193000526,
+        "nearest_secondary_road_m": 168.00634139086182,
+        "nearest_tertiary_road_m": 186.87602226524157,
+        "nearest_residential_road_m": 5.068856347668358,
+        "nearest_rail_ground_m": 1390.8985089972346,
+        "nearest_rail_underground_m": 279.7709307595739,
+        "major_road_len_50m": 0.0,
+        "minor_road_len_50m": 171.50410407265264,
+        "major_road_len_100m": 104.69362915591788,
+        "minor_road_len_100m": 555.6552978501891,
+        "major_road_len_300m": 1180.1186806571338,
+        "minor_road_len_300m": 4416.272705850473,
+        "rail_ground_len_300m": 0.0
+      },
+      "cv": {
+        "mae": 5.782141809304461,
+        "mae_std": 0.16919287001730532,
+        "rmse": 7.302460812148927,
+        "spearman": 0.3231851507504847,
+        "n": 924
+      }
+    },
+    "dawn": {
+      "intercept": 36.18835675964388,
+      "weights": {
+        "a_pred": -0.7707639519575621,
+        "nearest_major_road_m": -0.0019285626572967235,
+        "nearest_primary_road_m": -0.00020640230527579564,
+        "nearest_secondary_road_m": 0.00020003065457808474,
+        "nearest_tertiary_road_m": -0.0025876617659494248,
+        "nearest_residential_road_m": -0.0014239469539067506,
+        "nearest_rail_ground_m": 0.0007855260244304237,
+        "nearest_rail_underground_m": -0.00041705906185122196,
+        "major_road_len_50m": 0.026097554884241595,
+        "minor_road_len_50m": -0.010179410339310196,
+        "major_road_len_100m": 0.0030749005121575947,
+        "minor_road_len_100m": -0.00150772319072359,
+        "major_road_len_300m": -0.0002049657807790607,
+        "minor_road_len_300m": 0.0003859442606615245,
+        "rail_ground_len_300m": 0.00026668857360510526
+      },
+      "impute": {
+        "a_pred": 47.15011647037926,
+        "nearest_major_road_m": 86.073811879258,
+        "nearest_primary_road_m": 281.72639193000526,
+        "nearest_secondary_road_m": 168.00634139086182,
+        "nearest_tertiary_road_m": 186.87602226524157,
+        "nearest_residential_road_m": 5.068856347668358,
+        "nearest_rail_ground_m": 1390.8985089972346,
+        "nearest_rail_underground_m": 279.7709307595739,
+        "major_road_len_50m": 0.0,
+        "minor_road_len_50m": 171.50410407265264,
+        "major_road_len_100m": 104.69362915591788,
+        "minor_road_len_100m": 555.6552978501891,
+        "major_road_len_300m": 1180.1186806571338,
+        "minor_road_len_300m": 4416.272705850473,
+        "rail_ground_len_300m": 0.0
+      },
+      "cv": {
+        "mae": 5.519920989095796,
+        "mae_std": 0.15718830323405594,
+        "rmse": 6.748204552358494,
+        "spearman": 0.3216161332993459,
+        "n": 927
+      }
+    }
+  },
+  "metrics": {
+    "cv_summary_all": {
+      "A_idw": {
+        "mae": 6.928894337175722,
+        "mae_std": 0.3587952026734188,
+        "rmse": 8.890941842662434,
+        "spearman": 0.1730803390062286
+      },
+      "B_ridge": {
+        "mae": 5.730638974005675,
+        "mae_std": 0.23288773713616967,
+        "rmse": 7.330655259858321,
+        "spearman": 0.33178297637336224
+      },
+      "B_gb": {
+        "mae": 5.687553976364919,
+        "mae_std": 0.27857234954867893,
+        "rmse": 7.422446223629599,
+        "spearman": 0.3367005757791529
+      }
+    }
+  },
+  "adoption": {
+    "status": "adopted",
+    "baseline": "A_idw",
+    "evidence": "docs/research/noise-model-evaluation.md (W4: 5/5 folds, KECO rank -0.12 -> 0.21)"
+  }
+}
