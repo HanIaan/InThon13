@@ -12,10 +12,14 @@
 | 혼잡 `crowd_score` | 생활인구 밀도 persons/km² | log10 | ≤ 1,000 | ≥ 60,000 | 서울 평균 약 16,000/km², 도심 주간 60,000+ |
 
 - 빛 지표는 `evening`/`night`/`dawn`에만 적용합니다. `day`에는 `not_applicable`이며, **NASA 야간 방사휘도를 낮 시간 값으로 사용하지 않습니다.**
-- S-DoT 조도와 NASA 방사휘도가 모두 있는 격자의 결합 규칙은 엔진 담당이 결정 후 이 표에 추가합니다 (현재 Mock은 S-DoT lux만 사용).
+- **빛 지표 결합 규칙**: S-DoT 조도(lux, 직접 또는 IDW)를 우선 사용합니다. S-DoT 조도가 없을 때만 `night`/`dawn`에 NASA 방사휘도를 픽셀 중첩 면적 가중으로 대체합니다(`method: pixel_overlay`, `estimated`). lux와 방사휘도를 섞지 않으며, `day`·`evening`에는 NASA를 쓰지 않습니다. NASA는 `Mandatory_Quality_Flag` 0/1만 사용합니다.
 - 개인화 점수 `comfort_score` = Σ(가중치 × 지표 점수), 가중치는 `docs/api-contract.md`의 민감도 규칙을 따릅니다.
 - 등급: A ≥ 70, B ≥ 40, C < 40.
-- `confidence` (0~1) = 적용 가중치로 가중평균한 지표별 신뢰도. 지표별 신뢰도는 관측 직접성, 최근접 센서 거리, 표본 수, 품질 플래그로 산정(엔진 담당 정의).
+- `confidence` (0~1) = 적용 가중치로 가중평균한 지표별 신뢰도. 보정된 확률이 아닌 휴리스틱입니다 (구현: `services/precompute.py`).
+  - 소음·조도(S-DoT): `직접성 × (0.5 + 0.5·min(센서 수/3, 1)) × (0.5 + 0.5·min(표본 시간 수/24, 1))`. 직접성 = 격자 내 실측 위치 1.0, 지오코딩 위치 0.75, IDW `0.7 × (1 − 0.5 × 최근접거리/1000m)`.
+  - 소음·조도 공간 처리: 격자 안에 센서가 있으면 `direct`/`observed`, 없으면 반경 1km 내 최대 8개 센서 역거리제곱 가중(`idw`/`estimated`), 1km 내 센서가 없으면 `missing`.
+  - 혼잡: 행정동 밀도를 격자와의 교차 면적으로 배분(`areal_weighting`/`estimated`). 신뢰도 `0.65 × 유효 면적 비율 × min(1, 시간 행 수/기대 시간 수)`.
+  - NASA: `0.55 × 픽셀 피복 비율` (QF=1이면 × 0.8).
 
 ## 2. 시간대
 
