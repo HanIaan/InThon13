@@ -1,6 +1,13 @@
-"""Serving adapter: predict 200 m cell noise from the POI model artifact.
+"""Serving adapter: predict 200 m cell noise from a versioned noise model artifact.
 
-Enabled with ``NOISE_MODEL=poi`` (default off) in ``services.precompute``. Only this
+Two models are served:
+
+* ``NOISE_MODEL=road`` — W4 model B (IDW + OSM road/rail Ridge), adopted. Its artifact
+  has no fallback baseline, so a cell with no sensor within 1 km gets no prediction
+  and keeps the existing ``missing`` rule.
+* ``NOISE_MODEL=poi`` — B plus store/industrial features, not adopted (experimental).
+
+Enabled with ``NOISE_MODEL`` (default off) in ``services.precompute``. Only this
 adapter imports the modeling package at runtime; when the flag is off nothing here
 is imported and the existing IDW/direct rules run unchanged.
 
@@ -43,8 +50,14 @@ STORES_ENV = "NOISE_POI_STORES_CSV"
 OSM_DIR_ENV = "NOISE_OSM_DIR"
 ARTIFACT_ENV = "NOISE_MODEL_ARTIFACT"
 DEFAULT_ARTIFACT = Path(__file__).resolve().parent / "artifacts" / "noise_poi_model_v1.json"
+ROAD_ARTIFACT = Path(__file__).resolve().parent / "artifacts" / "noise_road_model_v1.json"
+ARTIFACTS = {"poi": DEFAULT_ARTIFACT, "road": ROAD_ARTIFACT}
 MAX_EVIDENCE = 8
 _TO_METRIC = Transformer.from_crs(4326, 5179, always_xy=True)
+
+
+def _uses(model: noise_model.NoiseModel, names: list[str]) -> bool:
+    return any(name in model.features for name in names)
 
 
 def parse_flag(value: str | None) -> bool:
@@ -52,11 +65,17 @@ def parse_flag(value: str | None) -> bool:
     return (value or "").strip().lower() == "poi"
 
 
+def model_name(value: str | None) -> str | None:
+    """``poi`` or ``road`` for a served model, None for off/unknown."""
+    name = (value or "").strip().lower()
+    return name if name in ARTIFACTS else None
+
+
 class NoisePoiPredictor:
     """Per-cell POI-model predictions for every time slot."""
 
-    def __init__(self, model: noise_model.NoiseModel, stores: pd.DataFrame,
-                 lines: list, polygons: list) -> None:
+    def __init__(self, model: noise_model.NoiseModel, stores: pd.DataFrame | None,
+                 lines: list, polygons: list | None) -> None:
         self.model = model
         self.stores = stores
         self.lines = lines
@@ -68,13 +87,15 @@ class NoisePoiPredictor:
         self.fallback: dict[str, idw.NoiseIDW] = {}
 
     @classmethod
-    def from_paths(cls, artifact_path: str | Path, stores_csv: str | Path,
+    def from_paths(cls, artifact_path: str | Path, stores_csv: str | Path | None,
                    osm_dir: str | Path) -> "NoisePoiPredictor":
         osm_dir = Path(osm_dir)
         model = noise_model.NoiseModel.load(artifact_path)
-        stores = poi.load_stores(stores_csv)
+        # Store and industrial inputs are loaded only when the artifact uses them.
+        stores = poi.load_stores(stores_csv) if _uses(model, poi.feature_names()) else None
         lines = spatial.project_lines(osm.load_features(osm_dir / "seoul_roads.geojson"))
-        polygons = industry.project_polygons(osm.load_industrial(osm_dir / "industrial_areas.geojson"))
+        polygons = (industry.project_polygons(osm.load_industrial(osm_dir / "industrial_areas.geojson"))
+                    if _uses(model, industry.feature_names()) else None)
         return cls(model, stores, lines, polygons)
 
     # ---- setup -----------------------------------------------------------
@@ -87,7 +108,7 @@ class NoisePoiPredictor:
         """
         baseline = self.model.baseline
         primary = baseline["primary"]
-        fallback = baseline["fallback"]
+        fallback = baseline.get("fallback")
         self.slot_records = slot_records
         for slot, records in slot_records.items():
             usable = [
@@ -100,11 +121,12 @@ class NoisePoiPredictor:
                 max_distance_m=float(primary["max_distance_m"]),
                 k=int(primary["k"]),
             )
-            self.fallback[slot] = idw.NoiseIDW(
-                usable,
-                max_distance_m=float(fallback["max_distance_m"]),
-                k=int(fallback["k"]),
-            )
+            if fallback is not None:
+                self.fallback[slot] = idw.NoiseIDW(
+                    usable,
+                    max_distance_m=float(fallback["max_distance_m"]),
+                    k=int(fallback["k"]),
+                )
 
     def prepare(self, cells: list[tuple[int, int]]) -> None:
         """Compute road/POI/industrial features once for every cell centre."""
@@ -118,20 +140,21 @@ class NoisePoiPredictor:
                 for lng, lat in [grid.cell_center(ix, iy)]
             ]
         )
-        road = spatial.compute_road_rail_features(points, self.lines)
-        shops = poi.compute_poi_features(points, self.stores)
-        industrial = industry.compute_industrial_features(points, self.polygons)
-        self.features = (
-            road.merge(shops, on="sensor_id", how="left")
-            .merge(industrial, on="sensor_id", how="left")
-            .set_index("sensor_id")
-        )
+        features = spatial.compute_road_rail_features(points, self.lines)
+        if self.stores is not None:
+            features = features.merge(poi.compute_poi_features(points, self.stores), on="sensor_id", how="left")
+        if self.polygons is not None:
+            features = features.merge(industry.compute_industrial_features(points, self.polygons),
+                                       on="sensor_id", how="left")
+        self.features = features.set_index("sensor_id")
 
     # ---- prediction ------------------------------------------------------
     def _baseline(self, slot: str, lng: float, lat: float) -> tuple[float | None, bool]:
         value = self.primary[slot].predict(lng, lat)
         if value is not None and math.isfinite(value):
             return value, False
+        if slot not in self.fallback:
+            return None, False
         value = self.fallback[slot].predict(lng, lat)
         return (value if value is not None and math.isfinite(value) else None), True
 
@@ -146,12 +169,16 @@ class NoisePoiPredictor:
         candidates.sort(key=lambda item: (item[0], item[1]))
         return candidates[:MAX_EVIDENCE]
 
-    def value(self, ix: int, iy: int, slot: TimeSlot | str) -> IndicatorValue:
+    def value(self, ix: int, iy: int, slot: TimeSlot | str) -> IndicatorValue | None:
+        """Model value for the cell, or None when the artifact has no fallback baseline
+        and no sensor lies within the primary radius (the caller keeps its own rule)."""
         slot_value = slot.value if isinstance(slot, TimeSlot) else str(slot)
         key = self.keys[(ix, iy)]
         lng, lat = grid.cell_center(ix, iy)
         row = self.features.loc[key]
         a_pred, fallback_used = self._baseline(slot_value, lng, lat)
+        if a_pred is None and "fallback" not in self.model.baseline:
+            return None
         values = {name: float(row[name]) for name in row.index}
         values["a_pred"] = a_pred if a_pred is not None else math.nan
         predicted = self.model.predict(slot_value, values)
@@ -186,8 +213,9 @@ class NoisePoiPredictor:
         period_end = observed_at + timedelta(hours=1) if observed_at is not None else None
 
         mae = self.model.slot_mae(slot_value)
+        basis = "상가·공장 근접도" if self.stores is not None else "도로·철도 근접도"
         note = (
-            f"상가·공장 근접도 기반 회귀 예측(estimated) — {self.model.model_id} "
+            f"{basis} 기반 회귀 예측(estimated) — {self.model.model_id} "
             f"v{self.model.model_version}; 직접 센서가 없어 IDW 기준값 + 학습된 잔차 보정. "
         )
         if mae is not None:
@@ -215,16 +243,17 @@ class NoisePoiPredictor:
 def predictor_from_env(
     processed_data_dir: str | Path, flag: str | None = None
 ) -> NoisePoiPredictor | None:
-    """Build the predictor when the flag is ``poi``; otherwise return None.
+    """Build the predictor when the flag is ``poi`` or ``road``; otherwise return None.
 
     ``flag`` defaults to ``$NOISE_MODEL``. Every other input is read from the
     environment because the store CSV and OSM cache are not committed.
     """
-    if not parse_flag(flag if flag is not None else os.environ.get(FLAG_ENV)):
+    name = model_name(flag if flag is not None else os.environ.get(FLAG_ENV))
+    if name is None:
         return None
     stores_csv = os.environ.get(STORES_ENV)
-    if not stores_csv:
+    if name == "poi" and not stores_csv:
         raise ValueError(f"{FLAG_ENV}=poi requires {STORES_ENV} (상가업소 CSV path)")
-    artifact = os.environ.get(ARTIFACT_ENV) or DEFAULT_ARTIFACT
+    artifact = os.environ.get(ARTIFACT_ENV) or ARTIFACTS[name]
     osm_dir = os.environ.get(OSM_DIR_ENV) or Path(processed_data_dir).resolve().parent / "raw" / "osm"
     return NoisePoiPredictor.from_paths(artifact, stores_csv, osm_dir)
