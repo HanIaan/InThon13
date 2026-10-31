@@ -9,6 +9,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { DirectionDial, FloorInput, ModeSwitch } from "@/components/HomeViews";
 import type { Cell, Home } from "@/lib/data";
@@ -60,53 +61,158 @@ function seeded(seed: number) {
   };
 }
 
-// 외벽은 콘크리트·벽돌·타일 세 가지를 쓰고, 밤에는 일부 창에만 불이 켜진다.
-function facade(base: string, line: string, seed: number, litShare: number) {
-  const [cols, rows, cellW, cellH] = [8, 8, 96, 72];
-  const map = document.createElement("canvas");
-  const glow = document.createElement("canvas");
-  map.width = glow.width = cols * cellW;
-  map.height = glow.height = rows * cellH;
+// 외벽 한 칸은 폭 4m, 높이 1개 층(3m)이다. 고층은 아파트 발코니, 중층은 타일 띠창, 저층은 벽돌 빌라로 그린다.
+// 같은 그림의 높낮이(창은 들어가고 층 슬래브는 나온다)로 노멀맵을 만들어 빛을 받을 때 요철이 보이게 한다.
+type FacadeStyle = { wall: string; trim: string; kind: "balcony" | "band" | "punched" };
+const FACADE_STYLES: Record<"high" | "mid" | "low", FacadeStyle[]> = {
+  high: [
+    { wall: "#ece8df", trim: "#d7d1c5", kind: "balcony" },
+    { wall: "#e3dfd6", trim: "#c9c2b4", kind: "balcony" },
+    { wall: "#f1ede6", trim: "#b9c2c9", kind: "balcony" },
+  ],
+  mid: [
+    { wall: "#d8cfc1", trim: "#bdb2a1", kind: "band" },
+    { wall: "#c9c5bd", trim: "#a9a49b", kind: "band" },
+  ],
+  low: [
+    { wall: "#a8705a", trim: "#8a5a47", kind: "punched" },
+    { wall: "#c4a988", trim: "#a68c6d", kind: "punched" },
+    { wall: "#b9b2a6", trim: "#968f84", kind: "punched" },
+  ],
+};
+const FACADE = { cols: 6, rows: 6, cellW: 128, cellH: 96 };
+
+function normalFromHeight(height: HTMLCanvasElement, strength: number) {
+  const { width, height: rows } = height;
+  const source = height.getContext("2d")!.getImageData(0, 0, width, rows).data;
+  const out = document.createElement("canvas");
+  out.width = width;
+  out.height = rows;
+  const context = out.getContext("2d")!;
+  const image = context.createImageData(width, rows);
+  const at = (x: number, y: number) => source[(((y + rows) % rows) * width + ((x + width) % width)) * 4] / 255;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < width; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+      const length = Math.hypot(dx, dy, 1);
+      const i = (y * width + x) * 4;
+      image.data[i] = ((-dx / length) * 0.5 + 0.5) * 255;
+      image.data[i + 1] = ((dy / length) * 0.5 + 0.5) * 255;
+      image.data[i + 2] = ((1 / length) * 0.5 + 0.5) * 255;
+      image.data[i + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  return out;
+}
+
+// 텍스처 그리기와 노멀맵 계산이 무거워서, 한 번 만든 외벽은 다시 열 때 그대로 쓴다.
+const facadeCache = new Map<string, THREE.MeshStandardMaterial>();
+
+// 밤에는 일부 창에만 불이 켜진다.
+function facade(style: FacadeStyle, seed: number, litShare: number) {
+  const key = `${style.wall}/${style.kind}/${seed}/${litShare}`;
+  const cached = facadeCache.get(key);
+  if (cached) return cached;
+  const { cols, rows, cellW, cellH } = FACADE;
+  const [map, glow, bump] = [0, 1, 2].map(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = cols * cellW;
+    canvas.height = rows * cellH;
+    return canvas;
+  });
   const paint = map.getContext("2d")!;
   const light = glow.getContext("2d")!;
-  paint.fillStyle = base;
+  const relief = bump.getContext("2d")!;
+  paint.fillStyle = style.wall;
   paint.fillRect(0, 0, map.width, map.height);
   light.fillStyle = "#000";
   light.fillRect(0, 0, glow.width, glow.height);
+  relief.fillStyle = "#808080";
+  relief.fillRect(0, 0, bump.width, bump.height);
   const random = seeded(seed);
-  for (let n = 0; n < 2600; n++) {
-    paint.fillStyle = `rgba(${random() > 0.5 ? "255,255,255" : "0,0,0"},${random() * 0.06})`;
-    paint.fillRect(random() * map.width, random() * map.height, 1 + random() * 3, 1 + random() * 3);
+  // 오래된 외벽처럼 아주 옅은 얼룩만 남긴다. 멀리서 지저분해 보이지 않게 크고 흐리게 칠한다.
+  for (let n = 0; n < 60; n++) {
+    paint.fillStyle = `rgba(0,0,0,${random() * 0.025})`;
+    paint.fillRect(random() * map.width, random() * map.height, 30 + random() * 80, 20 + random() * 120);
   }
+  const glass = (x: number, y: number, w: number, h: number) => {
+    const pane = paint.createLinearGradient(x, y, x, y + h);
+    pane.addColorStop(0, "#c9d8e3");
+    pane.addColorStop(0.45, "#8ea4b4");
+    pane.addColorStop(1, "#56697a");
+    paint.fillStyle = pane;
+    paint.fillRect(x, y, w, h);
+    relief.fillStyle = "#3a3a3a";
+    relief.fillRect(x, y, w, h);
+    if (random() < litShare) {
+      light.fillStyle = random() < 0.75 ? "#ffcf96" : "#dfeaff";
+      light.fillRect(x, y, w, h);
+    }
+  };
   for (let col = 0; col < cols; col++) {
     for (let row = 0; row < rows; row++) {
-      const [x, y] = [col * cellW + 26, row * cellH + 20];
-      const [w, h] = [cellW - 52, cellH - 38];
-      paint.fillStyle = line;
-      paint.fillRect(col * cellW, row * cellH + cellH - 5, cellW, 5);
-      const pane = paint.createLinearGradient(x, y, x + w, y + h);
-      pane.addColorStop(0, "#a8bccb");
-      pane.addColorStop(0.55, "#6f8596");
-      pane.addColorStop(1, "#46535f");
-      paint.fillStyle = pane;
-      paint.fillRect(x, y, w, h);
-      paint.fillStyle = "rgba(235,235,230,.8)";
-      paint.fillRect(x + w / 2 - 1, y, 2, h);
-      if (random() < litShare) {
-        light.fillStyle = random() < 0.75 ? "#ffcf96" : "#dfeaff";
-        light.fillRect(x, y, w, h);
+      const [x0, y0] = [col * cellW, row * cellH];
+      if (style.kind === "balcony") {
+        // 발코니 통창, 그 아래 난간 띠, 바닥 슬래브 띠.
+        glass(x0 + 10, y0 + 14, cellW - 20, cellH - 44);
+        paint.fillStyle = "rgba(255,255,255,.55)";
+        for (let m = 1; m < 3; m++) paint.fillRect(x0 + 10 + ((cellW - 20) * m) / 3 - 1, y0 + 14, 2, cellH - 44);
+        paint.fillStyle = style.trim;
+        paint.fillRect(x0, y0 + cellH - 30, cellW, 18);
+        paint.fillStyle = "rgba(0,0,0,.18)";
+        paint.fillRect(x0, y0 + cellH - 12, cellW, 3);
+        relief.fillStyle = "#c8c8c8";
+        relief.fillRect(x0, y0 + cellH - 30, cellW, 21);
+        if (col % 3 === 0) {
+          paint.fillStyle = style.trim;
+          paint.fillRect(x0, y0, 6, cellH);
+          relief.fillStyle = "#b0b0b0";
+          relief.fillRect(x0, y0, 6, cellH);
+        }
+      } else if (style.kind === "band") {
+        // 층마다 이어지는 띠창과 타일 띠.
+        glass(x0, y0 + 22, cellW, cellH - 50);
+        paint.fillStyle = "rgba(255,255,255,.5)";
+        paint.fillRect(x0 + cellW / 2 - 1, y0 + 22, 2, cellH - 50);
+        paint.fillStyle = style.trim;
+        paint.fillRect(x0, y0 + cellH - 28, cellW, 28);
+        relief.fillStyle = "#a0a0a0";
+        relief.fillRect(x0, y0 + cellH - 28, cellW, 28);
+      } else {
+        // 벽돌 줄눈 위에 작은 창 두 개.
+        paint.fillStyle = "rgba(0,0,0,.08)";
+        for (let b = 0; b < cellH; b += 8) paint.fillRect(x0, y0 + b, cellW, 1);
+        for (const wx of [x0 + 18, x0 + 74]) {
+          if (random() < 0.15) continue;
+          glass(wx, y0 + 26, 36, 40);
+          paint.fillStyle = style.trim;
+          paint.fillRect(wx - 3, y0 + 66, 42, 5);
+        }
       }
     }
   }
-  const textures = [map, glow].map((canvas) => {
+  const normal = normalFromHeight(bump, 6);
+  const textures = [map, glow, normal].map((canvas, i) => {
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(1 / (4 * cols), 1 / (FLOOR_M * rows));
-    texture.colorSpace = THREE.SRGBColorSpace;
+    if (i < 2) texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;
     return texture;
   });
-  return new THREE.MeshStandardMaterial({ map: textures[0], emissiveMap: textures[1], emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.85 });
+  const material = new THREE.MeshStandardMaterial({
+    map: textures[0],
+    emissiveMap: textures[1],
+    emissive: 0xffffff,
+    emissiveIntensity: 0,
+    normalMap: textures[2],
+    normalScale: new THREE.Vector2(0.9, 0.9),
+    roughness: 0.82,
+  });
+  facadeCache.set(key, material);
+  return material;
 }
 
 type Conditions = { light: number; sound: number; crowd: number };
@@ -121,18 +227,18 @@ type Scene = {
 
 const GROUND_M = 9000;
 const GROUND_CELLS = 300;
-const COVER_COLORS = { none: 0x77786f, park: 0x7d9a5d, forest: 0x4c6a43, water: 0x4d7fa8 };
+const COVER_COLORS = { none: 0xaea99e, park: 0x8aa865, forest: 0x5f7f4c, water: 0x6b9cc4 };
 const STREET_RANGE_M = 800;
 const ROAD_STEP_M = 12;
 const ROAD_LIFT_M = 0.35;
 const WIDE_ROAD_M = 9;
-const ROAD_COLOR = 0x3f4144;
-const LANE_COLOR = 0x56575a;
+const ROAD_COLOR = 0x4f5256;
+const LANE_COLOR = 0x6d6f72;
 const TREE_STEP_M = 9;
 const TREE_HEIGHT_M = 9;
 const MAX_TREES = 6000;
 const TREE_CHANCE: Partial<Record<Cover, number>> = { forest: 0.8, park: 0.2 };
-const TREE_COLORS = [0x3f5f39, 0x4b6d3f, 0x567a45];
+const TREE_COLORS = [0x5f8c45, 0x6f9b4e, 0x7fa958, 0x588540];
 const MAX_CARS = 220;
 const MAX_PEOPLE = 420;
 const MAX_SIGNS = 240;
@@ -150,6 +256,32 @@ function insideRing(x: number, z: number, ring: number[][]) {
   return hit;
 }
 
+const PARAPET = { height: 1, inset: 0.35 };
+const CORE = { width: 6, height: 3.2, depth: 4.5, minFloors: 7 };
+
+// 옥상 난간은 외곽선을 중심 쪽으로 조금 당긴 구멍을 낸 띠로 만든다. 7층 이상은 계단실 상자를 하나 올린다.
+function rooftop(points: number[][], cx: number, cz: number, roofAt: number, floors: number) {
+  const parts: THREE.BufferGeometry[] = [];
+  const inset = points.map(([x, z]) => {
+    const d = Math.hypot(cx - x, cz - z);
+    return d > PARAPET.inset * 4 ? [x + ((cx - x) * PARAPET.inset) / d, z + ((cz - z) * PARAPET.inset) / d] : null;
+  });
+  if (inset.every(Boolean)) {
+    const shape = new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, -z)));
+    shape.holes.push(new THREE.Path((inset as number[][]).map(([x, z]) => new THREE.Vector2(x, -z))));
+    const parapet = new THREE.ExtrudeGeometry(shape, { depth: PARAPET.height, bevelEnabled: false });
+    parapet.rotateX(-Math.PI / 2);
+    parapet.translate(0, roofAt, 0);
+    parts.push(parapet);
+  }
+  if (floors >= CORE.minFloors && insideRing(cx, cz, points)) {
+    const core = new THREE.BoxGeometry(CORE.width, CORE.height, CORE.depth).toNonIndexed();
+    core.translate(cx, roofAt + CORE.height / 2, cz);
+    parts.push(core);
+  }
+  return parts;
+}
+
 function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[], streets: Street[]): Scene {
   const metersPerLng = 111000 * Math.cos((home.lat * Math.PI) / 180);
   const toLocal = (lat: number, lng: number) => [(lng - home.lng) * metersPerLng, -(lat - home.lat) * metersPerLat];
@@ -165,7 +297,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xc8d4dc, 0.00032);
+  scene.fog = new THREE.FogExp2(0xd3dde4, 0.00026);
 
   const orbitCamera = new THREE.PerspectiveCamera(45, 1, 1, 8000);
   const windowCamera = new THREE.PerspectiveCamera(36, 1, 0.5, 8000);
@@ -184,12 +316,15 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   sky.material.uniforms.mieDirectionalG.value = 0.86;
   scene.add(sky);
 
-  const ambient = new THREE.HemisphereLight(0xd8e6f5, 0x6a635a, 0.8);
+  // 하늘빛은 차갑게, 땅에서 튀는 빛은 따뜻하게 해서 그늘진 벽도 칙칙하지 않게 한다.
+  const ambient = new THREE.HemisphereLight(0xdbe8f6, 0x9a8b76, 0.8);
   const sun = new THREE.DirectionalLight(0xfff0dc, 3);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
   Object.assign(sun.shadow.camera, { left: -500, right: 500, top: 500, bottom: -500, near: 1, far: 2200 });
-  sun.shadow.bias = -0.0005;
+  sun.shadow.bias = -0.0003;
+  sun.shadow.normalBias = 0.6;
+  sun.shadow.radius = 3;
   scene.add(ambient, sun, sun.target);
 
   const terrain = new THREE.PlaneGeometry(GROUND_M, GROUND_M, GROUND_CELLS, GROUND_CELLS);
@@ -207,16 +342,13 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const materials = [
-    facade("#c9c3b6", "#a9a296", 11, 0.4),
-    facade("#9c6a51", "#7f5845", 23, 0.4),
-    facade("#dcd9d1", "#b9b5ac", 37, 0.4),
-    facade("#b4a48f", "#8f8373", 53, 0.4),
-  ];
-  const roof = new THREE.MeshStandardMaterial({ color: 0x8c8a85, roughness: 0.92 });
+  const tiers = (["high", "mid", "low"] as const).map((tier, t) => FACADE_STYLES[tier].map((style, s) => facade(style, 11 + t * 17 + s * 7, 0.4)));
+  const materials = tiers.flat();
+  // 지붕은 바닥(따뜻한 회색)과 구분되게 조금 차가운 콘크리트색으로 칠한다.
+  const roof = new THREE.MeshStandardMaterial({ color: 0x9a9ea3, roughness: 0.88 });
   const groups: THREE.BufferGeometry[][] = materials.map(() => []);
   const roofs: THREE.BufferGeometry[] = [];
-  let index = 0;
+  const random = seeded(101);
   for (const building of buildings) {
     const points = building.ring.map(([lat, lng]) => toLocal(lat, lng));
     const [cx, cz] = [points.reduce((sum, p) => sum + p[0], 0) / points.length, points.reduce((sum, p) => sum + p[1], 0) / points.length];
@@ -224,7 +356,14 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
     const shape = new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, -z)));
     // 경사지에서도 뜨지 않게 가장 낮은 땅에서 세우고, 지붕은 건물 중심 땅 높이에 맞춘다.
     const base = lowestAt(points);
-    const roofAt = heightAt(cx, cz) + (building.height ?? (building.levels ?? UNKNOWN_FLOORS) * FLOOR_M);
+    const tall = building.height ?? (building.levels ?? UNKNOWN_FLOORS) * FLOOR_M;
+    const roofAt = heightAt(cx, cz) + tall;
+    // 높이로 외벽 종류를 고르고, 같은 종류 안의 색은 건물마다 다르게 고른다.
+    const floors = tall / FLOOR_M;
+    const tier = floors >= 7 ? 0 : floors >= 4 ? 1 : 2;
+    const style = tiers.slice(0, tier).reduce((sum, list) => sum + list.length, 0) + Math.floor(random() * tiers[tier].length);
+    // 옥상 난간(1m)과 고층 옥상의 계단실을 올려 지붕선이 납작하지 않게 한다.
+    roofs.push(...rooftop(points, cx, cz, roofAt, floors));
     const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.max(1, roofAt - base), bevelEnabled: false });
     geometry.rotateX(-Math.PI / 2);
     geometry.translate(0, base, 0);
@@ -245,16 +384,20 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
       return part;
     };
     roofs.push(pick(geometry.groups[0]));
-    groups[index++ % materials.length].push(pick(geometry.groups[1]));
+    groups[style].push(pick(geometry.groups[1]));
     geometry.dispose();
   }
-  const addMerged = (list: THREE.BufferGeometry[], material: THREE.Material) => {
+  // 모형처럼 윤곽이 또렷하게 보이도록 벽 모서리에 옅은 선을 긋는다.
+  const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x3b3f44, transparent: true, opacity: 0.22 });
+  const addMerged = (list: THREE.BufferGeometry[], material: THREE.Material, edges = false) => {
     if (!list.length) return;
-    const mesh = new THREE.Mesh(mergeGeometries(list), material);
+    const merged = mergeGeometries(list);
+    const mesh = new THREE.Mesh(merged, material);
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
+    if (edges) scene.add(new THREE.LineSegments(new THREE.EdgesGeometry(merged, 35), edgeMaterial));
   };
-  groups.forEach((list, i) => addMerged(list, materials[i]));
+  groups.forEach((list, i) => addMerged(list, materials[i], true));
   addMerged(roofs, roof);
 
   // 내 건물은 둘러보기에서만 주황색으로 보여 준다. 창문 시점에서는 내 벽이 시야를 막지 않게 숨긴다.
@@ -262,7 +405,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const ownMesh = new THREE.Mesh(
     // 윤곽이 없는 위치는 건물을 지어내지 않는다.
     ownRing.length ? new THREE.ExtrudeGeometry(new THREE.Shape(ownRing.map(([x, z]) => new THREE.Vector2(x, -z))), { depth: (Number(home.levels) || UNKNOWN_FLOORS) * FLOOR_M - ownBase, bevelEnabled: false }) : new THREE.BufferGeometry(),
-    new THREE.MeshStandardMaterial({ color: 0xf0a13c, roughness: 0.6 }),
+    new THREE.MeshStandardMaterial({ color: 0xf2a44a, emissive: 0xf2a44a, emissiveIntensity: 0.12, roughness: 0.55 }),
   );
   ownMesh.geometry.rotateX(-Math.PI / 2);
   ownMesh.geometry.translate(0, ownBase, 0);
@@ -270,7 +413,6 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   scene.add(ownMesh);
 
   // 실제 도로를 따라 자동차, 사람, 간판, 가로등 자리를 만든다.
-  const random = seeded(101);
   const lanes: { x: number; y: number; z: number; angle: number; distance: number }[] = [];
   const roadPositions: number[] = [];
   const roadColors: number[] = [];
@@ -369,22 +511,41 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
       treeSpots.push({ x: tx, y: heightAt(tx, tz), z: tz, size: 0.8 + random() * 0.7 });
     }
   }
-  const trees = new THREE.InstancedMesh(new THREE.ConeGeometry(2.8, TREE_HEIGHT_M, 7), new THREE.MeshStandardMaterial({ roughness: 0.95 }), Math.min(treeSpots.length, MAX_TREES));
+  // 줄기와 둥근 수관으로 나눠 활엽수처럼 보이게 하고, 그루마다 크기·기울기·색을 조금씩 다르게 한다.
+  const count = Math.min(treeSpots.length, MAX_TREES);
+  const canopyGeometry = new THREE.IcosahedronGeometry(3.2, 1);
+  canopyGeometry.scale(1, 1.15, 1);
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.32, TREE_HEIGHT_M * 0.45, 5), new THREE.MeshStandardMaterial({ color: 0x5b4636, roughness: 0.95 }), count);
+  // 잎은 빛이 조금 비쳐 그늘에서도 너무 검게 떨어지지 않게 한다.
+  const trees = new THREE.InstancedMesh(canopyGeometry, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true, emissive: 0x1d2a14, emissiveIntensity: 1 }), count);
+  const leaf = new THREE.Color();
   treeSpots.slice(0, MAX_TREES).forEach((tree, i) => {
-    dummy.position.set(tree.x, tree.y + (TREE_HEIGHT_M * tree.size) / 2, tree.z);
+    dummy.position.set(tree.x, tree.y + TREE_HEIGHT_M * 0.22 * tree.size, tree.z);
     dummy.rotation.set(0, 0, 0);
     dummy.scale.setScalar(tree.size);
     dummy.updateMatrix();
+    trunks.setMatrixAt(i, dummy.matrix);
+    dummy.position.set(tree.x, tree.y + TREE_HEIGHT_M * 0.62 * tree.size, tree.z);
+    dummy.rotation.set((random() - 0.5) * 0.3, random() * Math.PI, (random() - 0.5) * 0.3);
+    dummy.scale.set(tree.size * (0.85 + random() * 0.3), tree.size * (0.85 + random() * 0.35), tree.size * (0.85 + random() * 0.3));
+    dummy.updateMatrix();
     trees.setMatrixAt(i, dummy.matrix);
-    trees.setColorAt(i, new THREE.Color(TREE_COLORS[i % TREE_COLORS.length]));
+    leaf.set(TREE_COLORS[i % TREE_COLORS.length]).offsetHSL((random() - 0.5) * 0.03, 0, (random() - 0.5) * 0.08);
+    trees.setColorAt(i, leaf);
   });
-  trees.castShadow = true;
-  scene.add(trees);
+  trunks.castShadow = trees.castShadow = true;
+  trees.receiveShadow = true;
+  scene.add(trunks, trees);
 
   const composer = new EffectComposer(renderer);
   const renderPass = new RenderPass(scene, windowCamera);
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.6, 0.85);
+  // 건물이 땅·이웃 벽과 만나는 곳에 접촉 그늘을 넣어 입체감을 살린다(장면은 미터 단위).
+  const ao = new GTAOPass(scene, windowCamera, 512, 512);
+  ao.updateGtaoMaterial({ radius: 6, distanceExponent: 1.2, thickness: 3, scale: 1.1 });
+  ao.blendIntensity = 0.9;
   composer.addPass(renderPass);
+  composer.addPass(ao);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
@@ -414,6 +575,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
     mode = next;
     controls.enabled = next !== "window";
     renderPass.camera = next === "window" ? windowCamera : orbitCamera;
+    ao.camera = renderPass.camera;
     if (next === "top") orbitCamera.position.set(0, 620, 1);
     if (next === "orbit") orbitCamera.position.set(-170, 150, 240);
     controls.enableRotate = next === "orbit";
@@ -447,14 +609,17 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
     ownMesh.visible = mode !== "window";
     sky.material.uniforms.sunPosition.value.copy(direction);
     sky.visible = dayness > 0.02;
-    renderer.toneMappingExposure = 0.3 + dayness * 0.14;
+    renderer.toneMappingExposure = 0.32 + dayness * 0.33;
     const nightSky = new THREE.Color(0x0b1322).lerp(new THREE.Color(0x4a3a38), glow * 0.45);
     scene.background = nightSky;
     (scene.fog as THREE.FogExp2).color.copy(new THREE.Color(0xc9d6df).lerp(new THREE.Color(0xf2c9a0), golden).lerp(nightSky, 1 - dayness));
     sun.position.copy(direction).multiplyScalar(1000);
     sun.intensity = 3.4 * ramp(altitude, -1, 10);
     sun.color.set(0xfff2e0).lerp(new THREE.Color(0xffb06a), golden);
-    ambient.intensity = 0.08 + dayness * 1.5;
+    // 밤에는 푸른 달빛 정도만 남겨 건물 윤곽이 보이게 한다.
+    ambient.color.set(0x5a6f96).lerp(new THREE.Color(0xdbe8f6), dayness);
+    ambient.intensity = 1.6 - dayness * 0.3;
+    ao.blendIntensity = 0.35 + dayness * 0.55;
 
     // 빛공해가 클수록 창문, 간판, 가로등이 밝고 많아진다.
     for (const material of materials) material.emissiveIntensity = dark * (0.35 + glow * 1.1);
