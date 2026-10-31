@@ -325,6 +325,7 @@ export default function Home() {
   const found = lookup?.key === lookupKey ? lookup : null;
   const looking = "주소를 찾는 중";
   const missing = "";
+  const noInfo = "정보 없음";
   const foundAddress = found ? tidyAddress(found.address ?? missing, found.name) : looking;
   const target = isHome
     ? {
@@ -345,8 +346,8 @@ export default function Home() {
           line: `${active.spot.kind} · 도보 ${Math.max(1, Math.round(active.meters / 70))}분 · ${active.meters}m`,
           cell: active.cell,
           facts: [
-            { label: "주소", value: active.spot.address ?? missing },
-            { label: "운영 시간", value: active.spot.hours ?? missing },
+            { label: "주소", value: active.spot.address ?? noInfo },
+            { label: "운영 시간", value: active.spot.hours ?? noInfo },
           ],
           website: active.spot.website,
           lat: active.spot.lat,
@@ -358,7 +359,8 @@ export default function Home() {
             line: `직접 선택 · ${pointCell.area} 인근`,
             cell: pointCell,
             facts: [
-              { label: "주소", value: foundAddress },
+              { label: "주소", value: found && !found.address ? noInfo : foundAddress },
+              { label: "운영 시간", value: noInfo },
             ],
             website: undefined,
             lat: point.lat,
@@ -458,7 +460,7 @@ export default function Home() {
             score={sheetScore}
             cause={cause}
             up={up}
-            emptyValues={[looking]}
+            emptyValues={[looking, noInfo]}
             left={
               <>
                 {isHome && (
