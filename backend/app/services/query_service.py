@@ -134,6 +134,25 @@ def _source_name(v: IndicatorValue) -> str | None:
     return name
 
 
+INDICATOR_LABELS = {Indicator.noise: "소음", Indicator.light: "빛", Indicator.crowd: "혼잡"}
+
+
+def _no_score_note(sc: ScoredCell, sens: m.Sensitivities, slot: TimeSlot) -> str:
+    """Why comfort_score is null: selected senses (sensitivity > 0) all lack usable data."""
+    smap = _sens_map(sens)
+    selected = [k for k in INDICATOR_LABELS if smap[k] > 0]
+    if not selected:
+        return "사용 가능한 지표가 없어 감각지수를 계산하지 않았습니다."
+    names = ", ".join(INDICATOR_LABELS[k] for k in selected)
+    note = f"선택한 감각({names})의 유효한 데이터가 없어 감각지수를 계산하지 않았습니다."
+    # Only suggest other senses when one of them actually has data here.
+    if any(sc.scores[k] is not None for k in INDICATOR_LABELS if k not in selected):
+        note += " 다른 감각의 민감도를 높이면 점수를 볼 수 있습니다."
+    if Indicator.light in selected and slot not in LIGHT_APPLICABLE_SLOTS:
+        note += " 낮 시간대에는 빛공해 지표를 적용하지 않습니다."
+    return note
+
+
 def _date_range(v: IndicatorValue) -> str:
     # period_end is exclusive; show the last covered day.
     last = (v.period_end - timedelta(microseconds=1)).date()
@@ -191,7 +210,7 @@ def inspect(provider: DataProvider, lat: float, lng: float, slot: TimeSlot, sens
     if sc.data_status is DataStatus.mock:
         notes.append("Mock 모드: 모든 값은 데모용 합성 데이터입니다.")
     if sc.comfort_score is None:
-        notes.append("사용 가능한 지표가 없어 감각지수를 계산하지 않았습니다.")
+        notes.append(_no_score_note(sc, sens, slot))
     if provider.data_mode == "live":
         notes.append(_crowd_note(cell))
     return m.LocationInspectResponse(
