@@ -38,6 +38,7 @@ export function PlaceSheet({
 }) {
   const open = () => document.querySelector(".sheet")?.scrollIntoView({ behavior: "smooth" });
   const search = encodeURIComponent(target.title);
+  const facts = target.facts.filter((fact) => fact.value);
   return (
     <section className="sheet place">
       <button className={`peek ${up ? "hidden" : ""}`} onClick={open}>
@@ -49,14 +50,18 @@ export function PlaceSheet({
         <div className="module place-info">
           <p className="where">{target.line}</p>
           <h1>{target.title}</h1>
-          <dl>
-            {target.facts.map((fact) => (
-              <div key={fact.label}>
-                <dt>{fact.label}</dt>
-                <dd className={emptyValues.includes(fact.value) ? "empty" : ""}>{fact.value}</dd>
-              </div>
-            ))}
-          </dl>
+          {facts.length > 0 ? (
+            <dl>
+              {facts.map((fact) => (
+                <div key={fact.label}>
+                  <dt>{fact.label}</dt>
+                  <dd className={emptyValues.includes(fact.value) ? "empty" : ""}>{fact.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="no-facts">등록된 주소와 운영 정보가 없어요. 아래 지도에서 확인해 보세요.</p>
+          )}
           <div className="links">
             {target.website && <a href={target.website} target="_blank" rel="noreferrer">웹사이트</a>}
             <a href={`https://map.naver.com/p/search/${search}`} target="_blank" rel="noreferrer">네이버 지도</a>

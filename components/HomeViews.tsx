@@ -23,7 +23,6 @@ export function HomeInputs({
 }) {
   return (
     <div className="home-inputs">
-      <h2>내 방 정보</h2>
       <label>
         <span>층수</span>
         <input
@@ -201,7 +200,7 @@ export function HomeCompare({
           </tbody>
         </table>
       ) : (
-        <p className="hint">건물을 고르고 담아 보세요. 최대 3곳을 비교할 수 있어요.</p>
+        <p className="hint">최대 3곳을 담아 비교할 수 있어요.</p>
       )}
     </div>
   );

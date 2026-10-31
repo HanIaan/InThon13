@@ -302,7 +302,7 @@ export default function Home() {
   // 지금 정보를 보여 줄 대상: 주거 건물, 추천 장소, 직접 고른 위치 중 하나다.
   const found = lookup?.key === lookupKey ? lookup : null;
   const looking = "주소를 찾는 중";
-  const missing = "등록된 정보 없음";
+  const missing = "";
   const foundAddress = found ? found.address ?? missing : looking;
   const target = isHome
     ? {
@@ -311,8 +311,7 @@ export default function Home() {
         cell: homeCell,
         facts: [
           { label: "주소", value: home.address ?? foundAddress },
-          { label: "유형", value: home.type },
-          { label: "층수", value: home.levels ? `${home.levels}층` : missing },
+          { label: "규모", value: home.levels ? `지상 ${home.levels}층` : missing },
         ],
         website: undefined,
         lat: home.lat,
@@ -339,8 +338,7 @@ export default function Home() {
             cell: pointCell,
             facts: [
               { label: "주소", value: foundAddress },
-              { label: "근처", value: pointCell.area },
-              { label: "추천 장소", value: spots[0] ? `${spots[0].spot.name} · ${distanceMeters(point, spots[0].spot)}m` : missing },
+              { label: "가까운 추천", value: spots[0] ? `${spots[0].spot.name} · ${distanceMeters(point, spots[0].spot)}m` : missing },
             ],
             website: undefined,
             lat: point.lat,
@@ -436,7 +434,7 @@ export default function Home() {
 
       {target && (
         <GlassSheets isHome={isHome}>
-          <PlaceSheet target={target} score={sheetScore} up={up} emptyValues={[missing, looking]}>
+          <PlaceSheet target={target} score={sheetScore} up={up} emptyValues={[looking]}>
             {isHome && (
               <HomeInputs
                 input={homeInput}
@@ -447,7 +445,7 @@ export default function Home() {
           </PlaceSheet>
           <ScoreSheet
             heading={target.title}
-            subtitle={isHome ? "수면 환경 점수" : `${target.line} · ${hourLabel(hour)}`}
+            subtitle={isHome ? "수면 환경 점수" : hourLabel(hour)}
             score={sheetScore}
             secondary={isHome ? { label: "낮 햇빛 점수", value: report ? daylightScore(report.winter.minutes) : null } : undefined}
             sliders={sliders}
