@@ -1,6 +1,6 @@
-import { getPosition } from "suncalc";
-import roads from "./roads.json";
-import sensors from "./sensors.json";
+import { getPosition, getTimes } from "suncalc";
+import seedRoads from "./roads.json";
+import seedSensors from "./sensors.json";
 import type { Sensitivity } from "./rest";
 
 // 기획서 6-2~6-4장의 주거 계산이다. 층·창문 보정값은 기획서의 초기 추정치를 따른다.
@@ -8,7 +8,7 @@ export type Direction = "north" | "east" | "south" | "west";
 export type HomeInput = { floor: number; direction: Direction };
 export type Building = { levels: number | null; ring: [number, number][] };
 export type Sunlight = { minutes: number; start: string; end: string; slots: boolean[] };
-export type SunReport = { winter: Sunlight; spring: Sunlight; summer: Sunlight; missingLevels: number };
+export type SunReport = { winter: Sunlight; missingLevels: number };
 
 export const DIRECTIONS: { id: Direction; label: string; degree: number }[] = [
   { id: "south", label: "남향", degree: 180 },
@@ -22,7 +22,7 @@ const UNKNOWN_LEVELS = 3;
 const SHADE_RANGE_M = 200;
 const STEP_MINUTES = 10;
 const STREET_LIGHT_SHARE = 0.45;
-const SEASONS = { winter: "2026-12-21", spring: "2026-03-20", summer: "2026-06-21" } as const;
+const WINTER_SOLSTICE = "2026-12-21";
 
 const metersPerLat = 111000;
 const metersPerLng = (lat: number) => 111000 * Math.cos((lat * Math.PI) / 180);
@@ -35,9 +35,22 @@ function degreeOf(direction: Direction) {
   return DIRECTIONS.find((d) => d.id === direction)!.degree;
 }
 
+type Sensor = { lat: number; lng: number; hourly: (number | null)[] };
+
+const roads = [...seedRoads] as [number, number][][];
+let sensors = seedSensors as Sensor[];
+
+export function addRoads(lines: [number, number][][]) {
+  roads.push(...lines);
+}
+
+export function setSensors(list: Sensor[]) {
+  sensors = list;
+}
+
 function nearestRoadBearing(lat: number, lng: number) {
   let best = { distance: Infinity, x: 0, y: 0 };
-  for (const line of roads as [number, number][][]) {
+  for (const line of roads) {
     for (const [roadLat, roadLng] of line) {
       const { x, y } = toMeters({ lat, lng }, roadLat, roadLng);
       const distance = Math.hypot(x, y);
@@ -74,14 +87,30 @@ export function sleepScore(noiseNight: number, light: number, sensitivity: Sensi
   return Math.round(Math.max(0, Math.min(100, 100 - noiseLoad - lightLoad)));
 }
 
+// 백엔드 comfort_score처럼 민감도 비율로 가중 평균하고, 모두 0이면 균등하게 본다.
+export type HomePart = { name: string; score: number; weight: number };
+
+export function homeTotal(parts: HomePart[]) {
+  const sum = parts.reduce((total, part) => total + part.weight, 0);
+  const counted = sum ? parts : parts.map((part) => ({ ...part, weight: 1 }));
+  return Math.round(counted.reduce((total, part) => total + part.score * part.weight, 0) / (sum || parts.length));
+}
+
+export function homeSummary(parts: HomePart[]) {
+  const weighted = parts.filter((part) => part.weight > 0);
+  const counted = [...(weighted.length ? weighted : parts)].sort((a, b) => b.score - a.score);
+  return `강점 ${counted[0].name} · 주의 ${counted[counted.length - 1].name}`;
+}
+
 export function daylightScore(winterMinutes: number) {
   return Math.round(Math.min(winterMinutes / 240, 1) * 100);
 }
 
-export function sleepVerdict(score: number) {
-  if (score >= 65) return "OK";
-  if (score >= 45) return "확인 필요";
-  return "비추천";
+export function homeVerdict(score: number) {
+  if (score >= 80) return "살기 좋아요";
+  if (score >= 65) return "무난해요";
+  if (score >= 45) return "확인이 필요해요";
+  return "추천하지 않아요";
 }
 
 function rayDistance(ring: { x: number; y: number }[], dx: number, dy: number) {
@@ -135,7 +164,7 @@ function sunlightOn(date: string, window: { lat: number; lng: number; height: nu
 }
 
 // 기획서 6-3: 창문에서 태양 쪽으로 선을 그어 주변 건물에 가리는지 10분 단위로 확인한다.
-export function sunReport(home: { lat: number; lng: number; ring: [number, number][] }, input: HomeInput, buildings: Building[]): SunReport {
+export function sunReport(home: { lat: number; lng: number; ring: [number, number][] }, input: HomeInput, buildings: Building[], date: string = WINTER_SOLSTICE): SunReport {
   const around = buildings
     .map((b) => ({ levels: b.levels, ring: b.ring.map(([lat, lng]) => toMeters(home, lat, lng)) }))
     .filter((b) => b.ring.some((p) => Math.hypot(p.x, p.y) < SHADE_RANGE_M + 40))
@@ -146,11 +175,22 @@ export function sunReport(home: { lat: number; lng: number; ring: [number, numbe
     .map((b) => ({ height: (b.levels ?? UNKNOWN_LEVELS) * FLOOR_METERS, ring: b.ring, missing: b.levels === null }));
   const window = { lat: home.lat, lng: home.lng, height: (input.floor - 1) * FLOOR_METERS + 1.5 };
   return {
-    winter: sunlightOn(SEASONS.winter, window, input.direction, around),
-    spring: sunlightOn(SEASONS.spring, window, input.direction, around),
-    summer: sunlightOn(SEASONS.summer, window, input.direction, around),
+    winter: sunlightOn(date, window, input.direction, around),
     missingLevels: around.length ? Math.round((around.filter((b) => b.missing).length / around.length) * 100) : 0,
   };
+}
+
+const hourOf = (date: Date) => (date.getUTCHours() + 9 + date.getUTCMinutes() / 60) % 24;
+
+// 소음 센서 측정 주간(2026-10-12~18)의 가운데 날 기준 일출·일몰이다.
+export function sensorDaylight(lat: number, lng: number) {
+  const { sunrise, sunset } = getTimes(new Date("2026-10-15T12:00:00+09:00"), lat, lng);
+  return { sunrise: hourOf(sunrise!), sunset: hourOf(sunset!) };
+}
+
+export function clockLabel(hour: number) {
+  const minutes = Math.round(hour * 60);
+  return timeLabel(minutes);
 }
 
 export function formatDuration(minutes: number) {
@@ -163,7 +203,7 @@ export type SensorCard = { distance: number; hourly: (number | null)[] };
 
 export function nearestSensor(lat: number, lng: number): SensorCard | null {
   let best: SensorCard | null = null;
-  for (const sensor of sensors as { lat: number; lng: number; hourly: (number | null)[] }[]) {
+  for (const sensor of sensors) {
     const { x, y } = toMeters({ lat, lng }, sensor.lat, sensor.lng);
     const distance = Math.round(Math.hypot(x, y));
     if (!best || distance < best.distance) best = { distance, hourly: sensor.hourly };

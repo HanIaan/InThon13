@@ -27,7 +27,6 @@ export function MainSheet({
   target,
   scoreTitle,
   score,
-  secondary,
   cause,
   up,
   emptyValues,
@@ -37,7 +36,6 @@ export function MainSheet({
   target: SheetTarget;
   scoreTitle: string;
   score: SheetScore;
-  secondary?: { label: string; value: number | null };
   cause?: string;
   up: boolean;
   emptyValues: string[];
@@ -53,7 +51,7 @@ export function MainSheet({
         <strong>{score.value ?? "-"}</strong>
         <em style={{ color: score.color }}>{score.label}</em>
       </button>
-      <div className="sheet-grid">
+      <div className={`sheet-grid ${up ? "" : "resting"}`}>
         <div className="module story">
           <div className="place-head">
             <p className="where">{target.line}</p>
@@ -80,7 +78,6 @@ export function MainSheet({
             <p className="where">{scoreTitle}</p>
             <p className="score">{score.value ?? "-"}</p>
             <p className="verdict" style={{ color: score.color }}>{score.label}</p>
-            {secondary && <p className="secondary">{secondary.label} <b>{secondary.value ?? "-"}</b></p>}
             {cause && <p className="cause">{cause}</p>}
           </div>
           {left}
