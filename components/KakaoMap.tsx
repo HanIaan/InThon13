@@ -66,15 +66,12 @@ function homesImage(homes: Home[], view: MapView) {
   const ctx = canvas.getContext("2d")!;
   const x = (lng: number) => ((lng - view.west) / (view.east - view.west)) * canvas.width;
   const y = (lat: number) => ((view.north - lat) / (view.north - view.south)) * canvas.height;
-  ctx.strokeStyle = "#101418";
   ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
-  ctx.lineWidth = 0.7;
   for (const home of homes) {
     ctx.beginPath();
     home.ring.forEach(([lat, lng], i) => (i ? ctx.lineTo(x(lng), y(lat)) : ctx.moveTo(x(lng), y(lat))));
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
   }
   return canvas.toDataURL();
 }
