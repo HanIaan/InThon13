@@ -19,6 +19,14 @@ removed or altered by a flag:
 - ``noise_stuck_value``: identical AVG noise for >= NOISE_STUCK_HOURS consecutive hours
 - ``light_stuck_value``: identical AVG lux for >= LUX_STUCK_HOURS consecutive hours (a lamp-lit
   night legitimately stays constant ~11 h, so the lux threshold spans a full day)
+- ``light_night_implausible``: AVG lux > NIGHT_LUX_MAX (1,000 lux) at a night hour
+  (NIGHT_HOURS = 19:00-05:59 KST, i.e. after sunset / before sunrise all year in Seoul: earliest
+  sunrise ~05:10 but civil twilight only; latest sunset ~19:57 in June, so 19h is a conservative
+  start that only matters for values far above any artificial lighting). Rationale: street
+  lighting standards (KS A 3701 / EN 13201) target ~5-50 lux at road level, brightly lit
+  commercial frontages and plazas reach a few hundred lux; 1,000 lux is overcast-daylight level
+  and cannot be produced outdoors at night. Such readings (e.g. 21,763 lux at 00:00) indicate a
+  lamp/LED directly on the sensor, reflection or a fault, and would contaminate interpolation.
 - ``duplicate_merged``: several differing rows for one sensor-hour were averaged
 - ``no_valid_location``: the sensor has no valid Seoul coordinate in the location file
 """
@@ -63,6 +71,8 @@ NOISE_MIN_DB, NOISE_MAX_DB = 20.0, 140.0
 LUX_MIN, LUX_MAX = 0.0, 200_000.0
 NOISE_STUCK_HOURS = 12
 LUX_STUCK_HOURS = 24
+NIGHT_LUX_MAX = 1_000.0
+NIGHT_HOURS = frozenset({19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5})  # KST, after sunset .. before sunrise
 
 # Open API output order == weekly CSV column order (the CSV has Korean headers and up to
 # 6 trailing empty fields per data row).
@@ -230,6 +240,8 @@ def _range_flags(r: _Reading) -> set[str]:
         flags.add("noise_out_of_range")
     if r.lux is not None and not (LUX_MIN <= r.lux <= LUX_MAX):
         flags.add("light_out_of_range")
+    if r.lux is not None and r.lux > NIGHT_LUX_MAX and r.hour.astimezone(KST).hour in NIGHT_HOURS:
+        flags.add("light_night_implausible")
     for name, lo, avg, hi in (("noise", r.noise_min, r.noise, r.noise_max), ("light", r.lux_min, r.lux, r.lux_max)):
         if avg is not None and ((lo is not None and lo > avg) or (hi is not None and hi < avg)):
             flags.add(f"{name}_inconsistent_minmax")

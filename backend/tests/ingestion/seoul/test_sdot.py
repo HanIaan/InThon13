@@ -89,6 +89,29 @@ def test_out_of_range_flag_keeps_value():
     assert o["S2"].quality_flag == "noise_out_of_range"
 
 
+@pytest.mark.parametrize("ts,lux,flagged", [
+    ("2026-10-14_00:07:00", "21763", True),   # real OC3CL200014 reading
+    ("2026-10-12_19:07:00", "1001", True),    # first night hour
+    ("2026-10-12_05:07:00", "38754", True),   # last night hour
+    ("2026-10-12_23:07:00", "1000", False),   # threshold is exclusive
+    ("2026-10-12_23:07:00", "250", False),    # bright street / storefront
+    ("2026-10-12_06:07:00", "5000", False),   # dawn daylight
+    ("2026-10-12_18:07:00", "20000", False),  # evening daylight
+])
+def test_light_night_implausible(ts, lux, flagged):
+    obs, _ = sdot.build_observations([row(ts=ts, lux=lux)])
+    o = obs[0]
+    assert o.illuminance_lux == float(lux)  # value kept
+    assert (o.quality_flag == "light_night_implausible") is flagged
+    if not flagged:
+        assert o.quality_flag is None
+
+
+def test_night_implausible_combines_with_other_flags():
+    obs, _ = sdot.build_observations([row(ts="2026-10-12_02:07:00", lux="250000")])
+    assert obs[0].quality_flag == "light_night_implausible;light_out_of_range"
+
+
 def test_inconsistent_minmax_flag():
     obs, _ = sdot.build_observations([row(nis="50", nis_min="55", nis_max="60")])
     assert obs[0].quality_flag == "noise_inconsistent_minmax"
