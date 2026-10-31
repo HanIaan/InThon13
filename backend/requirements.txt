@@ -1,0 +1,12 @@
+fastapi>=0.115,<1.0
+pydantic>=2.7,<3.0
+pydantic-settings>=2.3,<3.0
+uvicorn[standard]>=0.30
+pyproj>=3.6
+httpx>=0.27
+# data processing (ingestion workers)
+pandas>=2.2
+numpy>=1.26
+shapely>=2.0
+# database (optional; mock mode runs without it)
+psycopg[binary]>=3.1

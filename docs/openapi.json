@@ -1,0 +1,1998 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "주거 감각지수 지도 API",
+    "description": "서울 200m 격자 소음·빛공해·혼잡도 기반 개인화 감각지수 API. 응답의 data_status로 observed / estimated / mock / missing을 구분합니다.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "서버·DB·데이터 준비 상태",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/grid": {
+      "get": {
+        "tags": [
+          "map"
+        ],
+        "summary": "bbox 내 200m 격자 감각지수 (GeoJSON)",
+        "operationId": "grid_api_v1_grid_get",
+        "parameters": [
+          {
+            "name": "bbox",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "minLng,minLat,maxLng,maxLat (WGS84)",
+              "examples": [
+                "126.97,37.55,127.00,37.58"
+              ],
+              "title": "Bbox"
+            },
+            "description": "minLng,minLat,maxLng,maxLat (WGS84)"
+          },
+          {
+            "name": "time_slot",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TimeSlot",
+              "description": "day(07-18) / evening(18-22) / night(22-02) / dawn(02-07), Asia/Seoul"
+            },
+            "description": "day(07-18) / evening(18-22) / night(22-02) / dawn(02-07), Asia/Seoul"
+          },
+          {
+            "name": "sound_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "소음 민감도 0~5",
+              "default": 3,
+              "title": "Sound Sensitivity"
+            },
+            "description": "소음 민감도 0~5"
+          },
+          {
+            "name": "light_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "빛 민감도 0~5",
+              "default": 3,
+              "title": "Light Sensitivity"
+            },
+            "description": "빛 민감도 0~5"
+          },
+          {
+            "name": "crowd_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "혼잡 민감도 0~5",
+              "default": 3,
+              "title": "Crowd Sensitivity"
+            },
+            "description": "혼잡 민감도 0~5"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridFeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/location/inspect": {
+      "get": {
+        "tags": [
+          "map"
+        ],
+        "summary": "좌표 클릭 상세정보",
+        "operationId": "location_inspect_api_v1_location_inspect_get",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 90,
+              "minimum": -90,
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 180,
+              "minimum": -180,
+              "title": "Lng"
+            }
+          },
+          {
+            "name": "time_slot",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TimeSlot",
+              "description": "day(07-18) / evening(18-22) / night(22-02) / dawn(02-07), Asia/Seoul"
+            },
+            "description": "day(07-18) / evening(18-22) / night(22-02) / dawn(02-07), Asia/Seoul"
+          },
+          {
+            "name": "sound_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "소음 민감도 0~5",
+              "default": 3,
+              "title": "Sound Sensitivity"
+            },
+            "description": "소음 민감도 0~5"
+          },
+          {
+            "name": "light_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "빛 민감도 0~5",
+              "default": 3,
+              "title": "Light Sensitivity"
+            },
+            "description": "빛 민감도 0~5"
+          },
+          {
+            "name": "crowd_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "혼잡 민감도 0~5",
+              "default": 3,
+              "title": "Crowd Sensitivity"
+            },
+            "description": "혼잡 민감도 0~5"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationInspectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations": {
+      "get": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "주거·휴식 적합 후보 (bbox 또는 중심좌표+반경)",
+        "operationId": "recommendations_api_v1_recommendations_get",
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/RecommendationMode"
+            }
+          },
+          {
+            "name": "time_slot",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TimeSlot",
+              "description": "day(07-18) / evening(18-22) / night(22-02) / dawn(02-07), Asia/Seoul"
+            },
+            "description": "day(07-18) / evening(18-22) / night(22-02) / dawn(02-07), Asia/Seoul"
+          },
+          {
+            "name": "bbox",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "minLng,minLat,maxLng,maxLat. lat/lng와 동시 사용 불가",
+              "title": "Bbox"
+            },
+            "description": "minLng,minLat,maxLng,maxLat. lat/lng와 동시 사용 불가"
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 90,
+                  "minimum": -90
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 180,
+                  "minimum": -180
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lng"
+            }
+          },
+          {
+            "name": "radius_m",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 5000,
+              "exclusiveMinimum": 0,
+              "default": 1500,
+              "title": "Radius M"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "sound_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "소음 민감도 0~5",
+              "default": 3,
+              "title": "Sound Sensitivity"
+            },
+            "description": "소음 민감도 0~5"
+          },
+          {
+            "name": "light_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "빛 민감도 0~5",
+              "default": 3,
+              "title": "Light Sensitivity"
+            },
+            "description": "빛 민감도 0~5"
+          },
+          {
+            "name": "crowd_sensitivity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "혼잡 민감도 0~5",
+              "default": 3,
+              "title": "Crowd Sensitivity"
+            },
+            "description": "혼잡 민감도 0~5"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/data/status": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "데이터 소스별 준비 상태",
+        "operationId": "data_status_api_v1_data_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DataStatus": {
+        "type": "string",
+        "enum": [
+          "observed",
+          "estimated",
+          "mock",
+          "missing",
+          "not_applicable"
+        ],
+        "title": "DataStatus"
+      },
+      "DataStatusResponse": {
+        "properties": {
+          "data_mode": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "live"
+            ],
+            "title": "Data Mode"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceStatus"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "grid": {
+            "$ref": "#/components/schemas/GridStatus"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_mode",
+          "sources",
+          "grid",
+          "generated_at"
+        ],
+        "title": "DataStatusResponse"
+      },
+      "DatabaseHealth": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "disabled",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "DatabaseHealth"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody"
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "invalid_parameter",
+          "bbox_too_large",
+          "validation_error",
+          "out_of_coverage",
+          "not_found",
+          "data_unavailable",
+          "internal_error"
+        ],
+        "title": "ErrorCode"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody",
+            "examples": [
+              {
+                "code": "bbox_too_large",
+                "details": {
+                  "cell_count": 9120,
+                  "max_cells": 6000
+                },
+                "message": "bbox covers 9120 grid cells; the limit is 6000. Zoom in."
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse"
+      },
+      "Grade": {
+        "type": "string",
+        "enum": [
+          "A",
+          "B",
+          "C"
+        ],
+        "title": "Grade"
+      },
+      "GridFeature": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Feature",
+            "title": "Type",
+            "default": "Feature"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "geometry": {
+            "$ref": "#/components/schemas/PolygonGeometry"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/GridFeatureProperties"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "geometry",
+          "properties"
+        ],
+        "title": "GridFeature"
+      },
+      "GridFeatureCollection": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "FeatureCollection",
+            "title": "Type",
+            "default": "FeatureCollection"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/GridFeature"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/GridMeta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "features",
+          "meta"
+        ],
+        "title": "GridFeatureCollection"
+      },
+      "GridFeatureProperties": {
+        "properties": {
+          "grid_id": {
+            "type": "string",
+            "title": "Grid Id"
+          },
+          "comfort_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comfort Score"
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Grade"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "noise_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Noise Score"
+          },
+          "light_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Light Score"
+          },
+          "crowd_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crowd Score"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "data_status": {
+            "$ref": "#/components/schemas/DataStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grid_id",
+          "confidence",
+          "data_status"
+        ],
+        "title": "GridFeatureProperties"
+      },
+      "GridMeta": {
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "default": "v1"
+          },
+          "data_mode": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "live"
+            ],
+            "title": "Data Mode"
+          },
+          "time_slot": {
+            "$ref": "#/components/schemas/TimeSlot"
+          },
+          "sensitivities": {
+            "$ref": "#/components/schemas/Sensitivities"
+          },
+          "weights": {
+            "$ref": "#/components/schemas/Weights"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "bbox": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Bbox"
+          },
+          "cell_size_m": {
+            "type": "integer",
+            "title": "Cell Size M"
+          },
+          "cell_count": {
+            "type": "integer",
+            "title": "Cell Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_mode",
+          "time_slot",
+          "sensitivities",
+          "weights",
+          "generated_at",
+          "bbox",
+          "cell_size_m",
+          "cell_count"
+        ],
+        "title": "GridMeta"
+      },
+      "GridStatus": {
+        "properties": {
+          "crs": {
+            "type": "string",
+            "title": "Crs"
+          },
+          "cell_size_m": {
+            "type": "integer",
+            "title": "Cell Size M"
+          },
+          "cell_count": {
+            "type": "integer",
+            "title": "Cell Count"
+          },
+          "precomputed_slots": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSlot"
+            },
+            "type": "array",
+            "title": "Precomputed Slots"
+          }
+        },
+        "type": "object",
+        "required": [
+          "crs",
+          "cell_size_m",
+          "cell_count",
+          "precomputed_slots"
+        ],
+        "title": "GridStatus"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status"
+          },
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "default": "v1"
+          },
+          "data_mode": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "live"
+            ],
+            "title": "Data Mode"
+          },
+          "database": {
+            "$ref": "#/components/schemas/DatabaseHealth"
+          },
+          "data_ready": {
+            "type": "boolean",
+            "title": "Data Ready"
+          },
+          "server_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "data_mode",
+          "database",
+          "data_ready",
+          "server_time"
+        ],
+        "title": "HealthResponse"
+      },
+      "Indicator": {
+        "type": "string",
+        "enum": [
+          "noise",
+          "light",
+          "crowd"
+        ],
+        "title": "Indicator"
+      },
+      "IndicatorDetail": {
+        "properties": {
+          "indicator": {
+            "$ref": "#/components/schemas/Indicator"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "raw_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Value"
+          },
+          "raw_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Unit"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DataStatus"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "nearby_sensors": {
+            "items": {
+              "$ref": "#/components/schemas/NearbySensor"
+            },
+            "type": "array",
+            "title": "Nearby Sensors"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "indicator",
+          "status"
+        ],
+        "title": "IndicatorDetail"
+      },
+      "InspectIndicators": {
+        "properties": {
+          "noise": {
+            "$ref": "#/components/schemas/IndicatorDetail"
+          },
+          "light": {
+            "$ref": "#/components/schemas/IndicatorDetail"
+          },
+          "crowd": {
+            "$ref": "#/components/schemas/IndicatorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "noise",
+          "light",
+          "crowd"
+        ],
+        "title": "InspectIndicators"
+      },
+      "InspectQuery": {
+        "properties": {
+          "sound_sensitivity": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Sound Sensitivity"
+          },
+          "light_sensitivity": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Light Sensitivity"
+          },
+          "crowd_sensitivity": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Crowd Sensitivity"
+          },
+          "lat": {
+            "type": "number",
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "title": "Lng"
+          },
+          "time_slot": {
+            "$ref": "#/components/schemas/TimeSlot"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sound_sensitivity",
+          "light_sensitivity",
+          "crowd_sensitivity",
+          "lat",
+          "lng",
+          "time_slot"
+        ],
+        "title": "InspectQuery"
+      },
+      "LocationInspectResponse": {
+        "properties": {
+          "query": {
+            "$ref": "#/components/schemas/InspectQuery"
+          },
+          "grid_id": {
+            "type": "string",
+            "title": "Grid Id"
+          },
+          "grid_center": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Grid Center"
+          },
+          "grid_geometry": {
+            "$ref": "#/components/schemas/PolygonGeometry"
+          },
+          "comfort_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comfort Score"
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Grade"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "data_status": {
+            "$ref": "#/components/schemas/DataStatus"
+          },
+          "weights": {
+            "$ref": "#/components/schemas/Weights"
+          },
+          "indicators": {
+            "$ref": "#/components/schemas/InspectIndicators"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "grid_id",
+          "grid_center",
+          "grid_geometry",
+          "confidence",
+          "data_status",
+          "weights",
+          "indicators",
+          "notes",
+          "meta"
+        ],
+        "title": "LocationInspectResponse"
+      },
+      "NearbySensor": {
+        "properties": {
+          "sensor_id": {
+            "type": "string",
+            "title": "Sensor Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceId"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "coordinates": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Coordinates"
+          },
+          "distance_m": {
+            "type": "number",
+            "title": "Distance M"
+          },
+          "raw_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Value"
+          },
+          "raw_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Unit"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sensor_id",
+          "source",
+          "coordinates",
+          "distance_m"
+        ],
+        "title": "NearbySensor"
+      },
+      "PolygonGeometry": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Polygon",
+            "title": "Type",
+            "default": "Polygon"
+          },
+          "coordinates": {
+            "items": {
+              "items": {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Coordinates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "coordinates"
+        ],
+        "title": "PolygonGeometry"
+      },
+      "RecommendationItem": {
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "grid",
+              "poi"
+            ],
+            "title": "Type"
+          },
+          "grid_id": {
+            "type": "string",
+            "title": "Grid Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "center": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Center"
+          },
+          "geometry": {
+            "$ref": "#/components/schemas/PolygonGeometry"
+          },
+          "comfort_score": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Comfort Score"
+          },
+          "grade": {
+            "$ref": "#/components/schemas/Grade"
+          },
+          "noise_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Noise Score"
+          },
+          "light_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Light Score"
+          },
+          "crowd_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crowd Score"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "data_status": {
+            "$ref": "#/components/schemas/DataStatus"
+          },
+          "distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rank",
+          "type",
+          "grid_id",
+          "center",
+          "geometry",
+          "comfort_score",
+          "grade",
+          "confidence",
+          "data_status"
+        ],
+        "title": "RecommendationItem"
+      },
+      "RecommendationMode": {
+        "type": "string",
+        "enum": [
+          "housing",
+          "rest"
+        ],
+        "title": "RecommendationMode"
+      },
+      "RecommendationsMeta": {
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "default": "v1"
+          },
+          "data_mode": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "live"
+            ],
+            "title": "Data Mode"
+          },
+          "time_slot": {
+            "$ref": "#/components/schemas/TimeSlot"
+          },
+          "sensitivities": {
+            "$ref": "#/components/schemas/Sensitivities"
+          },
+          "weights": {
+            "$ref": "#/components/schemas/Weights"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RecommendationMode"
+          },
+          "search": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Search"
+          },
+          "candidate_count": {
+            "type": "integer",
+            "title": "Candidate Count"
+          },
+          "poi_available": {
+            "type": "boolean",
+            "title": "Poi Available"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_mode",
+          "time_slot",
+          "sensitivities",
+          "weights",
+          "generated_at",
+          "mode",
+          "search",
+          "candidate_count",
+          "poi_available"
+        ],
+        "title": "RecommendationsMeta"
+      },
+      "RecommendationsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendationItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/RecommendationsMeta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "meta"
+        ],
+        "title": "RecommendationsResponse"
+      },
+      "ResponseMeta": {
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "default": "v1"
+          },
+          "data_mode": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "live"
+            ],
+            "title": "Data Mode"
+          },
+          "time_slot": {
+            "$ref": "#/components/schemas/TimeSlot"
+          },
+          "sensitivities": {
+            "$ref": "#/components/schemas/Sensitivities"
+          },
+          "weights": {
+            "$ref": "#/components/schemas/Weights"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_mode",
+          "time_slot",
+          "sensitivities",
+          "weights",
+          "generated_at"
+        ],
+        "title": "ResponseMeta"
+      },
+      "Sensitivities": {
+        "properties": {
+          "sound_sensitivity": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Sound Sensitivity"
+          },
+          "light_sensitivity": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Light Sensitivity"
+          },
+          "crowd_sensitivity": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Crowd Sensitivity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sound_sensitivity",
+          "light_sensitivity",
+          "crowd_sensitivity"
+        ],
+        "title": "Sensitivities"
+      },
+      "SourceCoverage": {
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "temporal_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal Start"
+          },
+          "temporal_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal End"
+          }
+        },
+        "type": "object",
+        "title": "SourceCoverage"
+      },
+      "SourceId": {
+        "type": "string",
+        "enum": [
+          "sdot",
+          "living_population",
+          "nasa_black_marble"
+        ],
+        "title": "SourceId"
+      },
+      "SourceReadiness": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "partial",
+          "not_loaded",
+          "mock",
+          "error"
+        ],
+        "title": "SourceReadiness"
+      },
+      "SourceStatus": {
+        "properties": {
+          "source_id": {
+            "$ref": "#/components/schemas/SourceId"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SourceReadiness"
+          },
+          "last_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated At"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/SourceCoverage"
+          },
+          "observation_count": {
+            "type": "integer",
+            "title": "Observation Count"
+          },
+          "missing_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Rate"
+          },
+          "spatial_resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spatial Resolution"
+          },
+          "update_frequency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Frequency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "name",
+          "status",
+          "coverage",
+          "observation_count"
+        ],
+        "title": "SourceStatus"
+      },
+      "TimeSlot": {
+        "type": "string",
+        "enum": [
+          "day",
+          "evening",
+          "night",
+          "dawn"
+        ],
+        "title": "TimeSlot"
+      },
+      "Weights": {
+        "properties": {
+          "noise": {
+            "type": "number",
+            "title": "Noise"
+          },
+          "light": {
+            "type": "number",
+            "title": "Light"
+          },
+          "crowd": {
+            "type": "number",
+            "title": "Crowd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "noise",
+          "light",
+          "crowd"
+        ],
+        "title": "Weights",
+        "description": "Normalised weights actually applied (sum to 1 over usable indicators, 0 otherwise)."
+      }
+    }
+  }
+}
