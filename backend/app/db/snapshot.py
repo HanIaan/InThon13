@@ -17,7 +17,7 @@ from pydantic import TypeAdapter
 from app.contracts.data_interfaces import CellIndicators, EvidenceSensor, SourceInfo
 
 SNAPSHOT_NAME = "cell_indicators.sqlite"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2  # 2: light = NASA only, per-indicator S-DoT quality flags
 CELL_ADAPTER = TypeAdapter(CellIndicators)
 SOURCE_ADAPTER = TypeAdapter(SourceInfo)
 EVIDENCE_ADAPTER = TypeAdapter(EvidenceSensor)

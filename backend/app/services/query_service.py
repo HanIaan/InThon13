@@ -116,6 +116,8 @@ def grid_features(provider: DataProvider, bbox, slot: TimeSlot, sens: m.Sensitiv
 # Display precision per raw unit (response only; precomputed values are untouched).
 RAW_DECIMALS = {"dB": 1, "lux": 1, "nW/cm2/sr": 1, "persons/km2": 0}
 CROWD_PERIOD_GAP = timedelta(days=30)
+# 서울시 행정동 생활인구 시계열 종료일 (docs/data-dictionary.md 1장·3장).
+LIVING_POPULATION_SERIES_END = "2026-07-31"
 
 
 def _round_raw(value: float | None, unit: str | None) -> float | None:
@@ -144,6 +146,20 @@ def _crowd_period_note(cell: CellIndicators) -> str | None:
     last_day = (crowd.period_end - timedelta(microseconds=1)).date()
     return (f"혼잡도는 {crowd.period_start.date().isoformat()}~{last_day.isoformat()} 생활인구 기준이며 "
             "소음·조도 측정 기간과 다릅니다.")
+
+
+def _crowd_history_note(cell: CellIndicators) -> str:
+    """Always state that crowd comes from a past (discontinued) living-population series."""
+    crowd = cell.crowd
+    tail = f"서울시 행정동 생활인구 시계열은 {LIVING_POPULATION_SERIES_END}에 종료됐습니다."
+    if crowd.period_start is None or crowd.period_end is None:
+        return f"혼잡도는 과거 생활인구 자료 기준입니다. {tail}"
+    first = crowd.period_start.date()
+    last = (crowd.period_end - timedelta(microseconds=1)).date()
+    months = f"{first.year}년 {first.month}월"
+    if (last.year, last.month) != (first.year, first.month):
+        months += f"~{last.year}년 {last.month}월"
+    return f"혼잡도는 {months}({first.isoformat()}~{last.isoformat()}) 생활인구 기준의 과거 자료입니다. {tail}"
 
 
 def _indicator_detail(ind: Indicator, v: IndicatorValue, score: float | None) -> m.IndicatorDetail:
@@ -179,8 +195,10 @@ def inspect(provider: DataProvider, lat: float, lng: float, slot: TimeSlot, sens
         notes.append("Mock 모드: 모든 값은 데모용 합성 데이터입니다.")
     if sc.comfort_score is None:
         notes.append("사용 가능한 지표가 없어 감각지수를 계산하지 않았습니다.")
-    if provider.data_mode == "live" and (period_note := _crowd_period_note(cell)):
-        notes.append(period_note)
+    if provider.data_mode == "live":
+        notes.append(_crowd_history_note(cell))
+        if period_note := _crowd_period_note(cell):
+            notes.append(period_note)
     return m.LocationInspectResponse(
         query=m.InspectQuery(lat=lat, lng=lng, time_slot=slot, **sens.model_dump()),
         grid_id=gid, grid_center=grid.cell_center(ix, iy),
