@@ -1,6 +1,14 @@
 """inspect notes explain a null comfort_score by the user's selected senses."""
-from tests.api.test_live_api import IX, IY, live  # noqa: F401 (fixture)
+import pytest
+from fastapi.testclient import TestClient
+
+from app.api.deps import get_provider
+from app.contracts.data_interfaces import LivingPopulationRecord
 from app.core import grid
+from app.main import create_app
+from app.services.live_provider import LiveProvider
+from app.services.precompute import precompute
+from tests.api.test_live_api import IX, IY, live, make_processed, write_csv  # noqa: F401 (fixture)
 
 HINT = "다른 감각의 민감도를 높이면 점수를 볼 수 있습니다."
 DAY = "낮 시간대에는 빛공해 지표를 적용하지 않습니다."
@@ -44,14 +52,25 @@ def test_live_day_light_only(live):
     assert _no_score(body) == [f"선택한 감각(빛)의 유효한 데이터가 없어 감각지수를 계산하지 않았습니다. {HINT} {DAY}"]
 
 
-def test_live_selected_all_missing_without_alternative(live):
-    client, *_ = live
-    body = _get(client, "night", dict(sound_sensitivity=4, light_sensitivity=2, crowd_sensitivity=0), ix=IX + 9)
+@pytest.fixture
+def no_data_client(tmp_path):
+    """Covered cell IX+7 by day: noise >1 km from sensors, light n/a, no population rows."""
+    settings = make_processed(tmp_path)
+    write_csv(tmp_path / "living_population.csv", LivingPopulationRecord, [])
+    precompute(settings, local_only=True)
+    provider = LiveProvider(settings)
+    app = create_app()
+    app.dependency_overrides[get_provider] = lambda: provider
+    with TestClient(app) as client:
+        yield client
+
+
+def test_live_selected_all_missing_without_alternative(no_data_client):
+    body = _get(no_data_client, "day", dict(sound_sensitivity=4, light_sensitivity=2, crowd_sensitivity=0), ix=IX + 7)
     # No other sense has data either, so no "raise other sensitivity" hint.
-    assert _no_score(body) == ["선택한 감각(소음, 빛)의 유효한 데이터가 없어 감각지수를 계산하지 않았습니다."]
+    assert _no_score(body) == [f"선택한 감각(소음, 빛)의 유효한 데이터가 없어 감각지수를 계산하지 않았습니다. {DAY}"]
 
 
-def test_live_zero_sensitivities_no_data_keeps_generic(live):
-    client, *_ = live
-    body = _get(client, "night", dict(sound_sensitivity=0, light_sensitivity=0, crowd_sensitivity=0), ix=IX + 9)
+def test_live_zero_sensitivities_no_data_keeps_generic(no_data_client):
+    body = _get(no_data_client, "day", dict(sound_sensitivity=0, light_sensitivity=0, crowd_sensitivity=0), ix=IX + 7)
     assert _no_score(body) == ["사용 가능한 지표가 없어 감각지수를 계산하지 않았습니다."]

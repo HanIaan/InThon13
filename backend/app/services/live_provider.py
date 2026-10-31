@@ -8,7 +8,9 @@ on a later request so preparing the first dataset does not require an API restar
 """
 from __future__ import annotations
 
+import logging
 import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -22,6 +24,8 @@ from app.contracts.errors import ApiError, ErrorCode
 from app.db.snapshot import SNAPSHOT_NAME, read_snapshot
 
 PROJECT = Transformer.from_crs(4326, 5179, always_xy=True).transform
+HEALTH_TTL_S = 30.0
+log = logging.getLogger(__name__)
 
 
 class LiveProvider:
@@ -34,6 +38,9 @@ class LiveProvider:
         self._cells = {}
         self._sources = []
         self._sensors = {}
+        self._grid_ids = frozenset()
+        self._health = None  # (checked_at monotonic, status, message)
+        self._health_lock = threading.Lock()
         self.cell_count = 0
 
     def _load(self):
@@ -45,7 +52,7 @@ class LiveProvider:
             try:
                 if self._settings.database_url:
                     from app.db.postgres import read_database_snapshot
-                    snapshot = read_database_snapshot(self._settings.database_url)
+                    snapshot = read_database_snapshot(self._settings.database_url, lean=True)
                 else:
                     snapshot = read_snapshot(Path(self._settings.processed_data_dir) / SNAPSHOT_NAME)
                 if not snapshot.cells or not snapshot.grids or not snapshot.sources:
@@ -58,11 +65,29 @@ class LiveProvider:
                 self._cells = cells
                 self._sources = snapshot.sources
                 self._sensors = sensors
+                self._grid_ids = frozenset(g["grid_id"] for g in snapshot.grids)
                 self.cell_count = len(snapshot.grids)
                 self._loaded = True
             except Exception:
                 raise ApiError(ErrorCode.data_unavailable,
                                "Live data unavailable. Publish a precomputed dataset and check database configuration.") from None
+
+    def warm(self):
+        """Load the snapshot ahead of the first request. Failure is only logged; the next
+        request retries through the normal _load path."""
+        started = time.perf_counter()
+        try:
+            self._load()
+        except Exception:
+            # _load already replaces driver errors with a generic ApiError (no DSN details).
+            log.warning("live data warm-up failed; requests will retry loading")
+            return
+        log.info("live data warm-up loaded %d cells in %.1fs", self.cell_count, time.perf_counter() - started)
+
+    def covers(self, grid_id):
+        """True only for precomputed cells (those intersecting the administrative boundary)."""
+        self._load()
+        return grid_id in self._grid_ids
 
     def get_cells(self, grid_ids, time_slot):
         self._load()
@@ -114,13 +139,20 @@ class LiveProvider:
     def check_database(self):
         if not self._settings.database_url:
             return "disabled", "local precomputed SQLite backend"
-        try:
-            from app.db.postgres import connect
-            with connect(self._settings.database_url) as conn:
-                conn.execute("SELECT 1")
-            return "connected", None
-        except Exception:
-            return "error", "database connection unavailable"
+        # Opening a connection costs seconds on a remote DB; cache the result (incl. errors).
+        with self._health_lock:
+            now = time.monotonic()
+            if self._health and now - self._health[0] < HEALTH_TTL_S:
+                return self._health[1], self._health[2]
+            try:
+                from app.db.postgres import connect
+                with connect(self._settings.database_url) as conn:
+                    conn.execute("SELECT 1")
+                result = ("connected", None)
+            except Exception:
+                result = ("error", "database connection unavailable")
+            self._health = (time.monotonic(), *result)
+            return result
 
     def has_poi(self):
         return False

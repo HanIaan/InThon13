@@ -77,6 +77,15 @@ def _score_cells(provider: DataProvider, cells: list[grid.Cell], slot: TimeSlot,
     return [(c, ScoredCell(data[gid], smap)) for c, gid in zip(cells, ids) if gid in data]
 
 
+def _require_coverage(provider: DataProvider, gid: str, lat: float, lng: float, what: str) -> None:
+    """Providers with an explicit service area (live) reject cells they never precomputed,
+    e.g. inside SEOUL_BBOX but outside the Seoul boundary. Mock has no covers() hook."""
+    covers = getattr(provider, "covers", None)
+    if covers is not None and not covers(gid):
+        raise ApiError(ErrorCode.out_of_coverage, f"{what} is outside the Seoul service area",
+                       {"lat": lat, "lng": lng})
+
+
 def _round(v: float | None) -> float | None:
     return None if v is None else round(v, 1)
 
@@ -201,6 +210,7 @@ def inspect(provider: DataProvider, lat: float, lng: float, slot: TimeSlot, sens
                        {"lat": lat, "lng": lng})
     ix, iy = grid.cell_of(lng, lat)
     gid = grid.grid_id(ix, iy)
+    _require_coverage(provider, gid, lat, lng, "coordinate")
     cell = provider.get_cell_detail(gid, slot, lng, lat) or CellIndicators(
         grid_id=gid, time_slot=slot, noise=_missing(Indicator.noise),
         light=IndicatorValue(None, None, DataStatus.not_applicable, 0.0) if slot == TimeSlot.day else _missing(Indicator.light),
@@ -239,6 +249,7 @@ def recommendations(provider: DataProvider, mode: RecommendationMode, slot: Time
         lng, lat = center
         if not grid.in_seoul_extent(lng, lat):
             raise ApiError(ErrorCode.out_of_coverage, "center is outside the Seoul service area", {"lat": lat, "lng": lng})
+        _require_coverage(provider, grid.grid_id(*grid.cell_of(lng, lat)), lat, lng, "center")
         dlat = radius_m / 111_000
         dlng = radius_m / (111_000 * 0.79)
         area = _validate_bbox((lng - dlng, lat - dlat, lng + dlng, lat + dlat))
