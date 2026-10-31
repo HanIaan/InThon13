@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Dock, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
+import { Dock, LocateButton, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
 import { DirectionDial, FloorInput, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
 import { GlassSheets, MainSheet } from "@/components/Sheets";
@@ -23,16 +23,17 @@ import {
   API_BASE,
   errorText,
   fetchGrid,
+  fetchGridChunks,
   fetchInspect,
   indicatorText,
   isUsable,
   reverseAddress,
+  scoreLookup,
   type GridResponse,
   type Inspect,
 } from "@/lib/api";
 import {
   cellForHome,
-  homeAtPoint,
   nearestHome,
   nearestToPoint,
   recommendSpots,
@@ -54,7 +55,8 @@ import {
   type Slot,
 } from "@/lib/rest";
 import { KAKAO_KEY, kakaoAddress, type SearchPlace } from "@/lib/kakao";
-import { buildingAt, CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, OVERVIEW_SIZE, useSeoul, type MapView } from "@/lib/seoul";
+import { terrainSummary } from "@/lib/terrain";
+import { buildingAt, CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, loadStreets, OVERVIEW_SIZE, SEOUL, useSeoul, type MapView, type Street } from "@/lib/seoul";
 import { useGlideScroll } from "@/lib/use-glide-scroll";
 
 // 역지오코딩 주소의 "안암동 안암동3가"처럼 겹치는 말과 건물 이름을 뺀다.
@@ -79,29 +81,38 @@ const DESIGN_TALL = [390, 812];
 const MAX_UI_SCALE = 1.6;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
+const DEFAULT_FLOOR = 3;
+const LOCATE_TIMEOUT_MS = 10000;
+const LOCATE_MAX_AGE_MS = 60000;
+
 export default function Home() {
   const [hour, setHour] = useState(23);
-  const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 4, light: 2, crowd: 3, sun: 3 });
+  const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 8, light: 4, crowd: 6, sun: 6 });
   const [point, setPoint] = useState(START_POINT);
   const [picked, setPicked] = useState(false);
   const [activeSpot, setActiveSpot] = useState<string | null>(null);
   const [home, setHome] = useState<HomePlace>(() => nearestHome(SEED_HOMES, START_POINT.lat, START_POINT.lng));
-  const [homeInput, setHomeInput] = useState<HomeInput>({ floor: 3, direction: "south" });
+  const [homeInput, setHomeInput] = useState<HomeInput>({ floor: DEFAULT_FLOOR, direction: "south" });
   const [buildings, setBuildings] = useState<Building[] | null>(null);
+  const [streets, setStreets] = useState<Street[]>([]);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"rest" | "home">("rest");
   const [tuneOpen, setTuneOpen] = useState(true);
   const [up, setUp] = useState(false);
   const [grid, setGrid] = useState<GridResponse | null>(null);
   const [details, setDetails] = useState<Partial<Record<Slot, Inspect>> | null>(null);
+  const [area, setArea] = useState<GridResponse | null>(null);
   const [notice, setNotice] = useState("");
   const [toast, setToast] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [myPoint, setMyPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [applied, setApplied] = useState(sensitivity);
   const [lookup, setLookup] = useState<{ key: string; address?: string; name?: string } | null>(null);
   const [view, setView] = useState<"day" | "night">("day");
   const [dayOpen, setDayOpen] = useState(false);
   const [mapView, setMapView] = useState<MapView | null>(null);
   const homeSearch = useRef(0);
+  const gridChunks = useRef(new Map<string, Promise<GridResponse>>());
 
   const isHome = tab === "home";
   const showDay = isHome && view === "day";
@@ -138,11 +149,16 @@ export default function Home() {
     return map;
   }, [heatCells, hour, sensitivity, isHome]);
 
+  // 서버가 있으면 추천 장소도 지도와 같은 서버 점수로 고른다. 서버 점수를 받기 전에는 추천하지 않는다.
+  const areaScore = useMemo(() => (area ? scoreLookup(area.features) : undefined), [area]);
   const spots = useMemo(
-    () => (isHome ? [] : recommendSpots(cells, allSpots, point, hour, sensitivity)),
-    [cells, allSpots, point, hour, sensitivity, isHome],
+    () => (isHome || (API_BASE && !areaScore) ? [] : recommendSpots(cells, allSpots, point, hour, sensitivity, areaScore)),
+    [cells, allSpots, point, hour, sensitivity, isHome, areaScore],
   );
   const active = picked ? undefined : spots.find((s) => s.spot.id === activeSpot) ?? spots[0];
+  // 점수 카드와 시간별 그래프는 이 위치의 서버 점수(시간대별 inspect)를 쓴다.
+  const place = isHome ? home : active ? active.spot : picked ? point : null;
+  const placeKey = place ? `${place.lat},${place.lng}` : "";
 
   useGlideScroll();
 
@@ -174,13 +190,19 @@ export default function Home() {
   }, [sensitivity]);
 
   useEffect(() => {
-    if (!API_BASE || !mapView || !detailed) {
+    if (!API_BASE || !mapView) {
       setGrid(null);
       return;
     }
     const control = new AbortController();
-    fetchGrid([mapView.west, mapView.south, mapView.east, mapView.north], isHome ? "night" : slot, applied, control.signal)
+    const timeSlot = isHome ? "night" : slot;
+    // 축소했을 때도 서버 점수로 칠한다. 평균 낸 정적 격자를 쓰면 높은 부담이 묽어져 빨간 곳이 사라진다.
+    const request = detailed
+      ? fetchGrid([mapView.west, mapView.south, mapView.east, mapView.north], timeSlot, applied, control.signal)
+      : fetchGridChunks(mapView, SEOUL, timeSlot, applied, gridChunks.current);
+    request
       .then((data) => {
+        if (control.signal.aborted) return;
         setGrid(isUsable(data.meta?.data_mode) ? data : null);
         setNotice("");
       })
@@ -192,11 +214,27 @@ export default function Home() {
     return () => control.abort();
   }, [slot, isHome, applied, mapView, detailed]);
 
+  // 추천 반경(1.2km)을 덮는 범위의 서버 점수를 한 번에 받는다.
   useEffect(() => {
-    if (!API_BASE || !isHome) return;
+    if (!API_BASE || isHome) {
+      setArea(null);
+      return;
+    }
+    const control = new AbortController();
+    const [dLat, dLng] = [0.012, 0.015];
+    fetchGrid([point.lng - dLng, point.lat - dLat, point.lng + dLng, point.lat + dLat], slot, applied, control.signal)
+      .then((data) => setArea(isUsable(data.meta?.data_mode) ? data : null))
+      .catch(() => {
+        if (!control.signal.aborted) setArea(null);
+      });
+    return () => control.abort();
+  }, [point.lat, point.lng, slot, applied, isHome]);
+
+  useEffect(() => {
+    if (!API_BASE || !place) return;
     const control = new AbortController();
     setDetails(null);
-    Promise.all(SLOTS.map((s) => fetchInspect(home.lat, home.lng, s.id, applied, control.signal)))
+    Promise.all(SLOTS.map((s) => fetchInspect(place.lat, place.lng, s.id, applied, control.signal)))
       .then((list) => setDetails(list.every((item) => isUsable(item.meta?.data_mode)) ? Object.fromEntries(SLOTS.map((s, i) => [s.id, list[i]])) : null))
       .catch((error) => {
         if (control.signal.aborted) return;
@@ -204,7 +242,7 @@ export default function Home() {
         setNotice(errorText(error));
       });
     return () => control.abort();
-  }, [home, applied, isHome]);
+  }, [placeKey, applied]);
 
   // 직접 고른 위치와 주소가 없는 건물은 좌표로 주소를 찾는다.
   const lookupPoint = isHome ? (home.address ? null : home) : picked ? point : null;
@@ -233,8 +271,10 @@ export default function Home() {
     if (!isHome) return;
     let current = true;
     setBuildings(null);
-    loadBuildings(home).then((list) => {
-      if (current) setBuildings(list);
+    Promise.all([loadBuildings(home), loadStreets(home)]).then(([list, roads]) => {
+      if (!current) return;
+      setStreets(roads);
+      setBuildings(list);
     });
     return () => {
       current = false;
@@ -279,7 +319,7 @@ export default function Home() {
     return () => observer.disconnect();
   });
 
-  function pick(place: SearchPlace) {
+  function pick(place: Omit<SearchPlace, "name"> & { name?: string }) {
     if (isHome) {
       const request = ++homeSearch.current;
       buildingAt(place).then((found) => {
@@ -291,12 +331,35 @@ export default function Home() {
     }
   }
 
+  function locate() {
+    if (!navigator.geolocation) {
+      setToast("이 브라우저는 위치 찾기를 지원하지 않아요");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLocating(false);
+        const here = { lat: coords.latitude, lng: coords.longitude };
+        if (here.lat < SEOUL.south || here.lat > SEOUL.north || here.lng < SEOUL.west || here.lng > SEOUL.east) {
+          setToast("서울 안에서만 볼 수 있어요");
+          return;
+        }
+        setMyPoint(here);
+        pick(here);
+      },
+      (error) => {
+        setLocating(false);
+        setToast(error.code === error.PERMISSION_DENIED ? "브라우저에서 위치 권한을 허용해 주세요" : "내 위치를 찾지 못했어요");
+      },
+      { enableHighAccuracy: true, timeout: LOCATE_TIMEOUT_MS, maximumAge: LOCATE_MAX_AGE_MS },
+    );
+  }
+
   function chooseOnMap(next: { lat: number; lng: number }) {
-    if (up) return;
     if (isHome) {
-      const found = homeAtPoint(homes, next.lat, next.lng);
-      if (found) chooseHome(found);
-      else setToast(mapView && mapView.zoom < HOME_ZOOM ? "지도를 확대해 건물을 골라 주세요" : "주거 시설만 선택할 수 있어요");
+      if (mapView && mapView.zoom < HOME_ZOOM) setToast("지도를 확대해 건물을 골라 주세요");
+      else pick(next);
       return;
     }
     if (!nearestToPoint(overview, next.lat, next.lng, 0.6)) {
@@ -314,8 +377,10 @@ export default function Home() {
 
   function chooseHome(next: HomePlace) {
     setHome(next);
-    const levels = Number(next.levels) || 0;
-    if (levels && homeInput.floor > levels) setHomeInput({ ...homeInput, floor: levels });
+    // 내 층은 건물마다 다르므로, 다른 건물을 고르면 기본값으로 되돌린다.
+    if (next.id === home.id) return;
+    const levels = Number(next.levels) || DEFAULT_FLOOR;
+    setHomeInput({ ...homeInput, floor: Math.min(DEFAULT_FLOOR, levels) });
   }
 
   const sleepOf = (item: HomePlace, input: HomeInput) => {
@@ -341,6 +406,7 @@ export default function Home() {
         facts: [
           { label: "주소", value: home.address ?? tidyAddress(foundAddress, home.name) },
           { label: "규모", value: home.levels ? `지상 ${home.levels}층` : missing },
+          { label: "지형", value: buildings ? terrainSummary(home.lat, home.lng) ?? missing : missing },
         ],
         website: undefined,
         lat: home.lat,
@@ -380,23 +446,47 @@ export default function Home() {
     [isHome, buildings, home, homeInput],
   );
   const homeResult = sleepOf(home, homeInput);
-  const sleep = details?.night?.comfort_score ?? homeResult.sleep;
+  // 서버가 있으면 지표 점수는 모두 서버 값이다. 서버에 값이 없는 지표는 종합에서 뺀다(로컬 값으로 채우지 않는다).
+  const serverScore = (slotId: Slot, key: "noise" | "light" | "crowd") => {
+    const value = details?.[slotId]?.indicators?.[key]?.score;
+    return value == null ? null : Math.round(value);
+  };
+  const sleep = details?.night?.comfort_score ?? (API_BASE ? null : homeResult.sleep);
   const sunPoint = report ? daylightScore(report.winter.minutes) : null;
-  const noiseDayPoint = Math.round(100 - homeCell.burdens.day.sound);
-  const noiseNightPoint = Math.round(100 - homeCell.burdens.night.sound);
-  const lightPoint = Math.round(100 - homeResult.light);
+  const noiseDayPoint = API_BASE ? serverScore("day", "noise") : Math.round(100 - homeCell.burdens.day.sound);
+  const noiseNightPoint = API_BASE ? serverScore("night", "noise") : Math.round(100 - homeCell.burdens.night.sound);
+  const lightPoint = API_BASE ? serverScore("night", "light") : Math.round(100 - homeResult.light);
+  const serverDb = (slotId: Slot) => {
+    const value = details?.[slotId]?.indicators?.noise?.raw_value;
+    return value == null ? null : Math.round(value);
+  };
+  const crowdLevel = (slotId: Slot) => {
+    const value = serverScore(slotId, "crowd");
+    return value === null ? "-" : level(100 - value);
+  };
+  const noisePoints = [noiseDayPoint, noiseNightPoint].filter((v): v is number => v !== null);
   const homeParts = [
     { name: "일조", score: sunPoint ?? 0, weight: sensitivity.sun },
-    { name: "소음", score: (noiseDayPoint + noiseNightPoint) / 2, weight: sensitivity.sound },
-    { name: "빛공해", score: lightPoint, weight: sensitivity.light },
+    { name: "소음", score: noisePoints.length ? noisePoints.reduce((a, b) => a + b) / noisePoints.length : 0, weight: noisePoints.length ? sensitivity.sound : 0 },
+    { name: "빛공해", score: lightPoint ?? 0, weight: lightPoint === null ? 0 : sensitivity.light },
   ];
-  const total = sunPoint === null ? null : homeTotal(homeParts);
-  const score = target ? (isHome ? total : restScore(burden!, sensitivity)) : null;
+  const total = sunPoint === null || (API_BASE && !details) ? null : homeTotal(homeParts);
+  const restNow = details?.[slot]?.comfort_score;
+  const restValue = API_BASE ? (restNow == null ? null : Math.round(restNow)) : burden ? restScore(burden, sensitivity) : null;
+  const score = target ? (isHome ? total : restValue) : null;
   const scoreGrade = grade(score ?? 0);
-  const label = score === null ? (isHome ? "계산 중" : "데이터 없음") : isHome ? homeVerdict(score) : scoreGrade.label;
+  const pending = API_BASE && !details;
+  const label = score === null ? (isHome || pending ? "계산 중" : "데이터 없음") : isHome ? homeVerdict(score) : scoreGrade.label;
   const detail = details?.night;
   const levelOf = (sense: Sense) => {
     if (!target || !burden) return "-";
+    if (!isHome && sense === "light" && lightOff) return "야간 전용";
+    const item = details?.[isHome ? "night" : slot]?.indicators?.[sense === "sound" ? "noise" : sense];
+    if (API_BASE && item) {
+      if (item.score == null) return indicatorText(item) ?? "정보 없음";
+      if (sense === "sound" && item.raw_value != null) return `약 ${Math.round(item.raw_value)}dB`;
+      return level(100 - item.score);
+    }
     if (!isHome) {
       if (sense === "sound") return `약 ${target.cell.noiseDb[slot]}dB`;
       return sense === "light" && lightOff ? "야간 전용" : level(burden[sense]);
@@ -419,6 +509,7 @@ export default function Home() {
           scores={scores}
           features={live ? grid!.features : null}
           pinPoint={isHome ? null : point}
+          myPoint={myPoint}
           focusPoint={target ? { lat: target.lat, lng: target.lng } : null}
           spots={spots}
           activeSpot={active?.spot.id ?? null}
@@ -426,14 +517,13 @@ export default function Home() {
           activeHome={isHome ? home : null}
           onSpot={chooseSpot}
           onPoint={chooseOnMap}
-          onHome={(found) => {
-            if (!up) chooseHome(found);
-          }}
+          onHome={chooseHome}
           onView={setMapView}
         />
       </div>
 
       <TopSwitch isHome={isHome} onChange={setTab} />
+      {!up && <LocateButton busy={locating} onClick={locate} />}
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
       <TuneCard open={tuneOpen} hidden={up} isHome={isHome} onToggle={() => setTuneOpen(!tuneOpen)}>
@@ -447,7 +537,16 @@ export default function Home() {
           picked={picked ? { name: found?.name ?? "선택한 위치", detail: found?.address ?? `${pointCell.area} 인근`, score } : null}
           spots={spots}
           activeId={active?.spot.id ?? null}
-          burdenOf={(item) => burdenAt(item.cell.burdens, hour)}
+          burdenOf={(item) => {
+            // 펼친 장소(=점수 카드의 장소)는 서버 지표 점수로 부담을 보여 준다.
+            const indicators = API_BASE && item.spot.id === active?.spot.id ? details?.[slot]?.indicators : undefined;
+            if (!indicators) return burdenAt(item.cell.burdens, hour);
+            const burdenOf = (key: "noise" | "light" | "crowd") => {
+              const value = indicators[key]?.score;
+              return value == null ? null : 100 - value;
+            };
+            return { sound: burdenOf("noise"), light: burdenOf("light"), crowd: burdenOf("crowd") };
+          }}
           lightOff={lightOff}
           onChoose={chooseSpot}
         />
@@ -498,13 +597,13 @@ export default function Home() {
                         dial={<DirectionDial input={homeInput} onChange={setHomeInput} />}
                       />
                     ) : (
-                      <LightCard level={level(homeResult.light)} score={lightPoint} sleep={sleep} />
+                      <LightCard level={lightPoint === null ? "-" : level(100 - lightPoint)} score={lightPoint} sleep={sleep} />
                     )}
                   </div>
                   <NoiseCard
                     isDay={showDay}
-                    noise={target.cell.noiseDb[showDay ? "day" : "night"]}
-                    crowd={level(target.cell.burdens[showDay ? "day" : "night"].crowd)}
+                    noise={API_BASE ? serverDb(showDay ? "day" : "night") : target.cell.noiseDb[showDay ? "day" : "night"]}
+                    crowd={API_BASE ? crowdLevel(showDay ? "day" : "night") : level(target.cell.burdens[showDay ? "day" : "night"].crowd)}
                     score={showDay ? noiseDayPoint : noiseNightPoint}
                     sensor={nearestSensor(home.lat, home.lng)}
                     daylight={sensorDaylight(home.lat, home.lng)}
@@ -516,7 +615,11 @@ export default function Home() {
                     <div className="report-card">
                       <RestHours
                         hour={hour}
-                        scoreAt={(mark) => restScore(burdenAt(target.cell.burdens, mark), sensitivity)}
+                        scoreAt={(mark) => {
+                          if (!API_BASE) return restScore(burdenAt(target.cell.burdens, mark), sensitivity);
+                          const value = details?.[slotOf(mark)]?.comfort_score;
+                          return value == null ? null : Math.round(value);
+                        }}
                         onHour={setHour}
                       />
                     </div>
@@ -543,6 +646,7 @@ export default function Home() {
           input={homeInput}
           maxFloor={Number(home.levels) || 30}
           buildings={buildings}
+          streets={streets}
           onInput={setHomeInput}
           onClose={() => setDayOpen(false)}
         />

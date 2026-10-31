@@ -157,8 +157,7 @@ export default function RestMap({
       L.polygon(home.ring, {
         renderer: renderer.current!,
         interactive: false,
-        color: "#101418",
-        weight: 0.7,
+        stroke: false,
         fillColor: "#ffffff",
         fillOpacity: 0.5,
       }).addTo(layer);
@@ -168,7 +167,7 @@ export default function RestMap({
   useEffect(() => {
     outline.current?.remove();
     outline.current = null;
-    if (!map.current || !activeHome) return;
+    if (!map.current || !activeHome?.ring.length) return;
     outline.current = L.polygon(activeHome.ring, {
       interactive: false,
       color: "#101418",

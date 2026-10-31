@@ -68,3 +68,37 @@ export async function kakaoAddress(lat: number, lng: number) {
     });
   });
 }
+
+// 실패와 결과 없음을 구분한다. 실패는 null이다.
+function geocode(query: string) {
+  return loadKakao().then(
+    (kakao) =>
+      new Promise<any[] | null>((resolve) => {
+        const { OK, ZERO_RESULT } = kakao.maps.services.Status;
+        new kakao.maps.services.Geocoder().addressSearch(query, (data: any[], status: string) => resolve(status === OK ? data : status === ZERO_RESULT ? [] : null));
+      }),
+  );
+}
+
+function coordAddress(lat: number, lng: number) {
+  return loadKakao().then(
+    (kakao) =>
+      new Promise<any>((resolve, reject) => {
+        new kakao.maps.services.Geocoder().coord2Address(lng, lat, (data: any[], status: string) => (status === kakao.maps.services.Status.OK ? resolve(data[0]) : reject(new Error("주소 조회 실패"))));
+      }),
+  );
+}
+
+// 필지 고유번호(PNU): 법정동코드 10자리 + 일반/산 + 본번 4자리 + 부번 4자리
+export async function lotAt(lat: number, lng: number) {
+  const found = await coordAddress(lat, lng);
+  const address = found.address;
+  const [detail] = (await geocode(address?.address_name ?? "")) ?? [];
+  const code = detail?.address?.b_code;
+  const pad = (value: string) => value.padStart(4, "0");
+  return {
+    address: found.road_address?.address_name ?? address?.address_name,
+    building: found.road_address?.building_name || undefined,
+    pnu: code ? `${code}${address.mountain_yn === "Y" ? 2 : 1}${pad(address.main_address_no)}${pad(address.sub_address_no || "0")}` : undefined,
+  };
+}

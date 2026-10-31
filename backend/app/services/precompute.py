@@ -29,11 +29,24 @@ Rules (heuristics, not calibrated uncertainty probabilities):
   not decoded here (ingestion owns product-specific cloud filtering).
   Latest period_end per pixel is selected; ties prefer shortest period then
   product name. Pixel confidence = 0.55 * covered fraction (0.8 penalty for QF=1).
+* Opt-in L1 (``LIGHT_MODEL=poi``, default off => exact L0 behaviour): inside each valid
+  NASA pixel, cells get ``radiance * w / area_weighted_mean(w)`` where
+  ``w = exp(cell_exponent)`` comes from the versioned artifact in
+  ``app/modeling/light/artifacts/``. The area-weighted pixel mean is preserved. Status is
+  still ``estimated``; method is ``pixel_overlay_poi``. Missing pixels stay missing.
+  Evening/night/dawn share one monthly value; day stays not_applicable.
+* Noise model (optional, ``--noise-model road|poi`` / ``NOISE_MODEL``, default off):
+  cells with a direct sensor keep the rules above; every other noise cell is replaced
+  by the versioned model artifact — always ``estimated`` / ``model``, never
+  ``observed``. ``road`` (W4 model B, adopted) only predicts where a sensor lies within
+  1 km, so its missing cells match the IDW rule. Off by default, so an unset flag
+  reproduces the rules above exactly.
 """
 from __future__ import annotations
 
 import argparse
 import math
+import os
 from collections import defaultdict
 from dataclasses import replace
 from datetime import datetime, time, timedelta
@@ -55,6 +68,15 @@ from app.contracts.data_interfaces import CellIndicators, EvidenceSensor, Indica
 from app.core import grid
 from app.db.processed import load_processed
 from app.db.snapshot import Snapshot, SNAPSHOT_NAME, write_snapshot
+from app.modeling.light.model import (
+    MODEL_NAME as LIGHT_POI_MODEL_NAME,
+    METHOD as LIGHT_POI_METHOD,
+    NOTE as LIGHT_POI_NOTE,
+    DominantPixelLayer,
+    LightPoiModel,
+    dasymetric_values,
+    light_model_name,
+)
 
 KST = ZoneInfo("Asia/Seoul")
 PROJECT = Transformer.from_crs(4326, 5179, always_xy=True).transform
@@ -209,6 +231,44 @@ class PixelField:
         )
 
 
+def poi_light_values(lights, cells):
+    """L1 (``LIGHT_MODEL=poi``): redistribute each valid pixel over its assigned cells.
+
+    ``cells`` is a sequence of (grid_id, polygon). The pixel mean is preserved over the
+    cells assigned to each pixel; cells without a valid overlapping pixel are omitted and
+    stay missing. Deterministic: the artifact carries every cell weight exponent.
+    """
+    model = LightPoiModel.load()
+    layer = DominantPixelLayer(lights)
+    assignments, chosen = [], {}
+    for gid, polygon in cells:
+        assignment = layer.assign(polygon)
+        if assignment is None:
+            continue
+        chosen[gid] = assignment
+        assignments.append({
+            "grid_id": gid,
+            "pixel_id": assignment.record.pixel_id,
+            "radiance": float(assignment.record.radiance),
+            "weight": model.weight(gid),
+            "overlap_area": assignment.overlap_area,
+        })
+    values = dasymetric_values(assignments)
+    output = {}
+    for gid, assignment in chosen.items():
+        record = assignment.record
+        quality = 1.0 if record.quality_flag == 0 else 0.8
+        output[gid] = IndicatorValue(
+            values[gid], "nW/cm2/sr", DataStatus.estimated,
+            round(0.55 * min(1, assignment.covered_fraction) * quality * model.confidence_factor, 4),
+            source=SourceId.nasa_black_marble, method=LIGHT_POI_METHOD,
+            period_start=datetime.combine(record.period_start, time.min, KST),
+            period_end=datetime.combine(record.period_end + timedelta(days=1), time.min, KST),
+            note=LIGHT_POI_NOTE,
+        )
+    return output
+
+
 def _bounds(geometries):
     return tuple(unary_union(geometries).bounds) if geometries else None
 
@@ -255,7 +315,7 @@ def source_metadata(data, dong_geoms, now):
     return output
 
 
-def build_snapshot(directory, max_distance_m=1000.0):
+def build_snapshot(directory, max_distance_m=1000.0, *, noise_model="off"):
     if not math.isfinite(max_distance_m) or max_distance_m <= 0:
         raise ValueError("max_distance_m must be positive and finite")
     data = load_processed(directory)
@@ -267,9 +327,19 @@ def build_snapshot(directory, max_distance_m=1000.0):
     codes = list(dong_geoms)
     dong_tree = STRtree(list(dong_geoms.values()))
     fields = sensor_fields(data)
+    predictor = None
+    if noise_model and str(noise_model).strip().lower() != "off":
+        # Imported lazily so the default path never loads the modeling package.
+        from app.modeling.noise.service import predictor_from_env
+        predictor = predictor_from_env(directory, noise_model)
+        if predictor is None:
+            raise ValueError(f"unsupported noise model: {noise_model!r} (expected 'off', 'road' or 'poi')")
+        predictor.attach_sensors({slot.value: fields[slot, "noise"].records for slot in TimeSlot})
+        predictor.prepare(list(grid.cells_in_bbox(extent)))
     population = population_fields(data, dong_geoms)
     pixels = PixelField(data.lights)
     cells, grids = [], []
+    cell_inputs = []
     for ix, iy in grid.cells_in_bbox(extent):
         polygon = metric_cell(ix, iy)
         land_area = polygon.intersection(boundary).area
@@ -280,9 +350,17 @@ def build_snapshot(directory, max_distance_m=1000.0):
                           geometry=dict(type="Polygon", coordinates=grid.cell_polygon(ix, iy))))
         overlaps = [(codes[i], polygon.intersection(dong_geoms[codes[i]]).area) for i in dong_tree.query(polygon)]
         overlaps = [(code, area) for code, area in overlaps if area > 1e-6]
-        nasa = pixels.value(polygon)
+        cell_inputs.append((gid, ix, iy, polygon, land_area, overlaps))
+    poi_light = None
+    if light_model_name() == LIGHT_POI_MODEL_NAME:
+        poi_light = poi_light_values(data.lights, [(gid, polygon) for gid, _, _, polygon, _, _ in cell_inputs])
+    for gid, ix, iy, polygon, land_area, overlaps in cell_inputs:
+        nasa = poi_light.get(gid, missing()) if poi_light is not None else pixels.value(polygon)
         for slot in TimeSlot:
             noise = fields[slot, "noise"].value(ix, iy, max_distance_m)
+            if predictor is not None and noise.method != "direct":
+                # The road model returns None beyond 1 km of any sensor: keep the missing rule there.
+                noise = predictor.value(ix, iy, slot) or noise
             # One monthly NASA value for every applicable slot; S-DoT lux never enters the score.
             light = missing(True) if slot not in LIGHT_APPLICABLE_SLOTS else replace(nasa)
             cells.append(CellIndicators(gid, slot, noise, light, crowd_value(land_area, overlaps, population, slot)))
@@ -293,8 +371,9 @@ def build_snapshot(directory, max_distance_m=1000.0):
     return Snapshot(cells, grids, sources, sensors), data
 
 
-def precompute(settings, *, local_only=False, max_distance_m=1000.0):
-    snapshot, data = build_snapshot(settings.processed_data_dir, max_distance_m)
+def precompute(settings, *, local_only=False, max_distance_m=1000.0, noise_model="off"):
+    snapshot, data = build_snapshot(settings.processed_data_dir, max_distance_m,
+                                    noise_model=noise_model)
     path = Path(settings.processed_data_dir) / SNAPSHOT_NAME
     write_snapshot(path, snapshot)
     if settings.database_url and not local_only:
@@ -307,9 +386,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-only", action="store_true", help="publish SQLite only, even if DATABASE_URL is configured")
     parser.add_argument("--max-distance-m", type=float, default=1000.0)
+    parser.add_argument("--noise-model", choices=["off", "road", "poi"],
+                        default=os.environ.get("NOISE_MODEL", "off"),
+                        help="noise model for cells without a direct sensor (default: $NOISE_MODEL or off)")
     args = parser.parse_args()
     try:
-        snapshot = precompute(get_settings(), local_only=args.local_only, max_distance_m=args.max_distance_m)
+        snapshot = precompute(get_settings(), local_only=args.local_only,
+                              max_distance_m=args.max_distance_m, noise_model=args.noise_model)
     except Exception:
         # Connection errors can contain credentials; never print their original text.
         parser.exit(1, "Precomputation failed. Check processed file contracts, directory permissions and database readiness.\n")
