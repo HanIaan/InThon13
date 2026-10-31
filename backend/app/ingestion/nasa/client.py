@@ -1,7 +1,7 @@
 """NASA Earthdata / LAADS DAAC Client and Tile Grid calculations.
 
-Handles tile coordinate math (Linear Lat/Lon grid for VNP46), URL construction,
-and downloading with Earthdata Bearer Token authentication.
+Handles tile coordinate math (Linear Lat/Lon grid for VNP46), CMR granule discovery,
+URL construction, and downloading with Earthdata Bearer Token authentication.
 """
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import logging
 import math
 import os
 import re
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
@@ -17,10 +19,23 @@ import httpx
 log = logging.getLogger(__name__)
 
 LAADS_ARCHIVE_URL = "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData"
+CMR_SEARCH_URL = "https://cmr.earthdata.nasa.gov/search/granules.json"
 EARTHDATA_TOKEN_ENV = "NASA_EARTHDATA_TOKEN"
 
 # Pattern for Black Marble tile: e.g. "h30v05"
 TILE_PATTERN = re.compile(r"^h(\d{2})v(\d{2})$")
+
+
+@dataclass(frozen=True)
+class GranuleInfo:
+    """Metadata of an authentic NASA Earthdata granule discovered via CMR."""
+    producer_granule_id: str
+    tile: str
+    period_start: str
+    period_end: str
+    size_mb: float
+    download_url: str
+    collection: str = "5200"
 
 
 def tile_for_coords(lng: float, lat: float) -> str:
@@ -79,7 +94,7 @@ def build_archive_url(
     product: str,
     year: int,
     day_of_year: int,
-    collection: str = "5000",
+    collection: str = "5200",
     filename: str | None = None,
 ) -> str:
     """Build LAADS DAAC archive URL for a given product, year, and Julian day of year."""
@@ -89,25 +104,114 @@ def build_archive_url(
     return base
 
 
+def query_cmr_granules(
+    product: str = "VNP46A3",
+    tile: str = "h30v05",
+    year_month: str | None = None,
+    limit: int = 10,
+    retries: int = 3,
+    timeout: float = 30.0,
+) -> list[GranuleInfo]:
+    """Search NASA CMR API for real Black Marble granules matching product and tile.
+
+    No authentication required for discovery metadata.
+    """
+    params = {
+        "short_name": product,
+        "producer_granule_id": f"*{tile}*",
+        "options[producer_granule_id][pattern]": "true",
+        "sort_key": "-start_date",
+        "page_size": limit,
+    }
+
+    last_err: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            log.debug("Querying CMR API (attempt %d/%d): %s with %s", attempt, retries, CMR_SEARCH_URL, params)
+            with httpx.Client(timeout=httpx.Timeout(timeout, connect=15.0)) as client:
+                res = client.get(CMR_SEARCH_URL, params=params)
+                res.raise_for_status()
+                data = res.json()
+                break
+        except Exception as exc:
+            last_err = exc
+            log.warning("CMR API query attempt %d failed: %s", attempt, exc)
+            if attempt < retries:
+                time.sleep(1.5 * attempt)
+    else:
+        raise RuntimeError(f"Failed to query CMR API after {retries} attempts: {last_err}") from last_err
+
+    entries = data.get("feed", {}).get("entry", [])
+    granules: list[GranuleInfo] = []
+
+    for entry in entries:
+        granule_id = entry.get("producer_granule_id", "")
+        time_start = entry.get("time_start", "")
+        time_end = entry.get("time_end", "")
+        size_mb = float(entry.get("granule_size", 0.0))
+
+        # Filter by year_month if requested (e.g. "2026-09")
+        if year_month and not time_start.startswith(year_month):
+            continue
+
+        # Find direct HTTPS download link (excluding s3://)
+        download_url: str | None = None
+        for link in entry.get("links", []):
+            href = link.get("href", "")
+            if href.endswith(".h5") and href.startswith("https://"):
+                download_url = href
+                break
+
+        if not download_url:
+            continue
+
+        granules.append(
+            GranuleInfo(
+                producer_granule_id=granule_id,
+                tile=tile,
+                period_start=time_start,
+                period_end=time_end,
+                size_mb=round(size_mb, 2),
+                download_url=download_url,
+                collection="5200",
+            )
+        )
+
+    return granules
+
+
+def get_latest_granule(
+    product: str = "VNP46A3",
+    tile: str = "h30v05",
+    year_month: str | None = None,
+) -> GranuleInfo | None:
+    """Return the latest available NASA granule metadata for the given tile and month."""
+    granules = query_cmr_granules(product=product, tile=tile, year_month=year_month, limit=10)
+    return granules[0] if granules else None
+
+
 def get_earthdata_token(token: str | None = None) -> str | None:
-    """Get Earthdata token from parameter, environment, or settings."""
-    if token:
-        return token
+    """Get Earthdata token from parameter, environment, or backend/.env settings."""
+    if token and token.strip():
+        return token.strip()
     env_token = os.environ.get(EARTHDATA_TOKEN_ENV)
-    if env_token:
-        return env_token
+    if env_token and env_token.strip():
+        return env_token.strip()
     try:
         from app.config import get_settings
-        return get_settings().nasa_earthdata_token
+        cfg_token = get_settings().nasa_earthdata_token
+        if cfg_token and cfg_token.strip():
+            return cfg_token.strip()
     except Exception:
-        return None
+        pass
+    return None
 
 
 def download_granule(
     url: str,
     output_path: str | Path,
     token: str | None = None,
-    timeout: float = 60.0,
+    timeout: float = 300.0,
 ) -> Path:
     """Download Black Marble HDF5 granule using NASA Earthdata Bearer token.
 
@@ -131,13 +235,15 @@ def download_granule(
         "User-Agent": "SensoryMap-NASA-Ingestion/1.0",
     }
 
-    log.info("Downloading Black Marble granule from %s to %s", url, out_file)
+    log.info("Downloading Black Marble granule to %s", out_file)
     with httpx.Client(follow_redirects=True, timeout=timeout) as client:
         with client.stream("GET", url, headers=headers) as response:
             response.raise_for_status()
             with open(out_file, "wb") as f:
-                for chunk in response.iter_bytes(chunk_size=65536):
+                downloaded = 0
+                for chunk in response.iter_bytes(chunk_size=131072):
                     f.write(chunk)
+                    downloaded += len(chunk)
 
     log.info("Successfully downloaded %s (%d bytes)", out_file, out_file.stat().st_size)
     return out_file
