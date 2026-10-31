@@ -27,27 +27,33 @@ def extract_night_lights(
     period_end: date | None = None,
     bbox: Sequence[float] = SEOUL_BBOX,
     tile: str | None = None,
+    radiance_dataset: str | None = None,
 ) -> list[NightLightRecord]:
     """Extract night light records for pixels within bbox from a Black Marble HDF5 file.
 
-    Rules:
-    - Mandatory_Quality_Flag == 255 (fill) -> radiance = None
-    - Mandatory_Quality_Flag == 2 (poor) -> radiance kept, quality_flag = 2
-    - Mandatory_Quality_Flag in (0, 1) -> radiance kept, quality_flag = 0/1
+    Rules (quality_flag in Mandatory_Quality_Flag codes; VNP46A3/A4 composite codes translated):
+    - quality_flag == 255 (fill) -> radiance = None
+    - quality_flag == 2 (poor) -> radiance kept, quality_flag = 2 (consumers exclude it)
+    - quality_flag in (0, 1) -> radiance kept, quality_flag = 0/1
     - Raw radiance == fill_value -> radiance = None
     - True radiance = (raw - add_offset) * scale_factor
+
+    Period: taken from the file (RangeBeginningDate/RangeEndingDate). An explicit period that
+    contradicts the file raises ValueError; a file without period metadata requires one.
     """
-    period_start = period_start or date(2026, 9, 1)
-    period_end = period_end or date(2026, 9, 30)
     bbox_tuple = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
 
     records: list[NightLightRecord] = []
 
-    with BlackMarbleHDF5(h5_path, tile=tile) as reader:
+    with BlackMarbleHDF5(h5_path, tile=tile, radiance_dataset=radiance_dataset) as reader:
+        log.info("Radiance layer: %s (quality: %s, scheme=%s)",
+                 reader.radiance_ds_name, reader.quality_ds_name, reader.quality_scheme)
         pixel_range = reader.bbox_to_pixel_range(bbox_tuple)
         if pixel_range is None:
             log.warning("BBox %s does not intersect tile %s in %s", bbox, reader.tile, h5_path)
             return []
+
+        period_start, period_end = _resolve_period(reader, period_start, period_end)
 
         r_min, r_max, c_min, c_max = pixel_range
         rad_slice, qual_slice, cloud_slice = reader.read_window(r_min, r_max, c_min, c_max)
@@ -76,7 +82,7 @@ def extract_night_lights(
                 # Process quality flag
                 qf: int | None = None
                 if raw_qual is not None:
-                    qf = int(raw_qual)
+                    qf = reader.contract_quality(int(raw_qual))
 
                 # Process cloud flag
                 cf: int | None = None
@@ -116,6 +122,24 @@ def extract_night_lights(
 
     log.info("Extracted %d night light records from %s", len(records), h5_path)
     return records
+
+
+def _resolve_period(
+    reader: BlackMarbleHDF5, period_start: date | None, period_end: date | None
+) -> tuple[date, date]:
+    file_start, file_end = reader.period_start, reader.period_end
+    if file_start and file_end:
+        if (period_start and period_start != file_start) or (period_end and period_end != file_end):
+            raise ValueError(
+                f"Requested period {period_start}~{period_end} contradicts file period "
+                f"{file_start}~{file_end} in {reader.file_path.name}"
+            )
+        return file_start, file_end
+    if period_start is None or period_end is None:
+        raise ValueError(
+            f"{reader.file_path.name} has no RangeBeginningDate/RangeEndingDate; pass period_start/period_end"
+        )
+    return period_start, period_end
 
 
 def save_records_to_csv(records: list[NightLightRecord], output_path: str | Path) -> Path:
