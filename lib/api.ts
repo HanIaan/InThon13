@@ -24,7 +24,7 @@ export type GridFeature = {
 
 export type GridResponse = { features: GridFeature[]; meta?: { data_mode?: string } };
 
-export type Indicator = { raw_value?: number | null; raw_unit?: string | null; status?: string | null };
+export type Indicator = { score?: number | null; raw_value?: number | null; raw_unit?: string | null; status?: string | null };
 
 export type Inspect = {
   comfort_score: number | null;
@@ -95,6 +95,27 @@ export async function fetchGridChunks(view: Bounds, area: Bounds, slot: Slot, se
   for (const chunk of chunks) for (const feature of chunk.features) features.set(feature.id ?? JSON.stringify(feature.geometry), feature);
   const meta = chunks.find((chunk) => chunk.meta && !isUsable(chunk.meta.data_mode))?.meta ?? chunks.find((chunk) => chunk.meta)?.meta;
   return { features: [...features.values()], meta } as GridResponse;
+}
+
+// 서버 칸(200m) 중심 중 가장 가까운 칸의 점수를 돌려준다. 칸 대각선의 절반(약 140m)보다 멀면 없음으로 본다.
+const LOOKUP_DEG = 0.0015;
+export function scoreLookup(features: GridFeature[]) {
+  const centers = features.flatMap((f) => {
+    const score = f.properties.comfort_score;
+    if (score == null || f.geometry.type !== "Polygon") return [];
+    const ring = (f.geometry.coordinates as number[][][])[0].slice(0, -1);
+    const lng = ring.reduce((sum, p) => sum + p[0], 0) / ring.length;
+    const lat = ring.reduce((sum, p) => sum + p[1], 0) / ring.length;
+    return [{ lat, lng, score }];
+  });
+  return (lat: number, lng: number) => {
+    let best: { d: number; score: number } | null = null;
+    for (const c of centers) {
+      const d = Math.hypot(c.lat - lat, (c.lng - lng) * 0.79);
+      if (d < LOOKUP_DEG && (!best || d < best.d)) best = { d, score: c.score };
+    }
+    return best ? Math.round(best.score) : null;
+  };
 }
 
 export function fetchInspect(lat: number, lng: number, slot: Slot, sensitivity: Sensitivity, signal: AbortSignal) {

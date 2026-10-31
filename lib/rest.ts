@@ -53,9 +53,13 @@ export function restScore(burden: Burden, sensitivity: Sensitivity): number {
 
 export type Grade = { letter: "A" | "B" | "C"; label: string; color: string };
 
+// 백엔드 등급 경계(A ≥70, B ≥40)와 같게 둔다.
+export const GRADE_A = 70;
+export const GRADE_B = 40;
+
 export function grade(score: number): Grade {
-  if (score >= 65) return { letter: "A", label: "쉬기 좋음", color: "#1a7f55" };
-  if (score >= 45) return { letter: "B", label: "보통", color: "#996a0d" };
+  if (score >= GRADE_A) return { letter: "A", label: "쉬기 좋음", color: "#1a7f55" };
+  if (score >= GRADE_B) return { letter: "B", label: "보통", color: "#996a0d" };
   return { letter: "C", label: "쉬기 어려움", color: "#cf3338" };
 }
 

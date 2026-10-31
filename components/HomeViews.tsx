@@ -92,17 +92,17 @@ export function NoiseCard({
   daylight,
 }: {
   isDay: boolean;
-  noise: number;
+  noise: number | null;
   crowd: string;
-  score: number;
+  score: number | null;
   sensor: SensorCard | null;
   daylight: { sunrise: number; sunset: number };
 }) {
   const isDayHour = (hour: number) => hour >= Math.floor(daylight.sunrise) && hour < Math.ceil(daylight.sunset);
   return (
     <div className="report-card">
-      <h2>소음 점수<b>{score}</b></h2>
-      <p className="card-value">약 {noise}dB<small>{isDay ? "낮" : "심야"} · 혼잡 {crowd}</small></p>
+      <h2>소음 점수<b>{score ?? "-"}</b></h2>
+      <p className="card-value">{noise === null ? "측정 없음" : `약 ${noise}dB`}<small>{isDay ? "낮" : "심야"} · 혼잡 {crowd}</small></p>
       {sensor && (
         <div className="sensor">
           <div className="sensor-chart" role="img" aria-label={`가까운 센서의 24시간 소음, ${CHART_MIN_DB}~${CHART_MAX_DB}dB 눈금`}>
@@ -120,12 +120,12 @@ export function NoiseCard({
   );
 }
 
-export function LightCard({ level, score, sleep }: { level: string; score: number; sleep: number }) {
+export function LightCard({ level, score, sleep }: { level: string; score: number | null; sleep: number | null }) {
   return (
     <div className="report-card">
-      <h2>빛공해 점수<b>{score}</b></h2>
-      <p className="card-value">{level}<small>심야 · 수면 점수 {sleep}</small></p>
-      <div className="night-window" aria-hidden="true"><i style={{ opacity: Math.min(1, (100 - score) / 100) }} /></div>
+      <h2>빛공해 점수<b>{score ?? "-"}</b></h2>
+      <p className="card-value">{level}<small>심야 · 수면 점수 {sleep === null ? "-" : Math.round(sleep)}</small></p>
+      <div className="night-window" aria-hidden="true"><i style={{ opacity: score === null ? 0 : Math.min(1, (100 - score) / 100) }} /></div>
     </div>
   );
 }
@@ -137,7 +137,7 @@ export function SunCard({ report, score, dial }: { report: SunReport | null; sco
     <div className="report-card">
       <h2>일조 점수<b>{score}</b></h2>
       <div className="sun-top">
-        <p className="card-value">{formatDuration(winter.minutes)}<small>동지{winter.minutes ? ` ${winter.start}–${winter.end}` : ""}</small></p>
+        <p className="card-value">{formatDuration(winter.minutes)}<small>동지 08–16시{winter.minutes ? ` · ${winter.start}–${winter.end}` : ""}</small></p>
         {dial}
       </div>
       <div className="sun-line" role="img" aria-label="동지 하루 직사광 시간대">

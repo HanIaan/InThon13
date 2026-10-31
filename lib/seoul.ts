@@ -131,7 +131,8 @@ export async function buildingAt(place: Point & { name?: string; detail?: string
   };
 }
 
-export async function loadBuildings(point: Point, margin = 0.006): Promise<Building[]> {
+// 일조 그림자 범위(600m)를 덮도록 경도 기준 약 660m까지 불러온다.
+export async function loadBuildings(point: Point, margin = 0.0075): Promise<Building[]> {
   const lists = await Promise.all(tilesIn(around(point, margin), BUILDING_TILE).map(loadBuildingRows));
   return lists.flat().map(([floors, height, flat]) => ({ levels: floors || null, height: height || undefined, ring: decodeRing(flat) }));
 }

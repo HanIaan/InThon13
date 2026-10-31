@@ -111,12 +111,14 @@ const OPEN_KINDS: Record<Slot, string[]> = {
 };
 
 // 쉼 지수가 높아도 너무 멀면 갈 이유가 줄어들므로 거리만큼 감점한다.
+// scoreOf가 있으면 서버 점수를 쓰고, 서버 점수가 없는 장소는 추천하지 않는다.
 export function recommendSpots(
   cells: Cell[],
   list: Spot[],
   origin: { lat: number; lng: number },
   hour: number,
   sensitivity: Sensitivity,
+  scoreOf?: (lat: number, lng: number) => number | null,
   count = 5,
 ) {
   const nearby = cells.filter((cell) => km(origin.lat, origin.lng, cell.lat, cell.lng) <= SEARCH_KM + 0.3);
@@ -126,7 +128,8 @@ export function recommendSpots(
       const cell = nearestToPoint(nearby, spot.lat, spot.lng, 0.3);
       if (!cell) return null;
       const distance = km(origin.lat, origin.lng, spot.lat, spot.lng);
-      const score = restScore(burdenAt(cell.burdens, hour), sensitivity);
+      const score = scoreOf ? scoreOf(spot.lat, spot.lng) : restScore(burdenAt(cell.burdens, hour), sensitivity);
+      if (score === null) return null;
       return { spot, cell, score, meters: Math.round(distance * 1000), value: score - distance * 25 };
     })
     .filter((item) => item !== null)

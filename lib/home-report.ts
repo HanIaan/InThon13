@@ -19,10 +19,14 @@ export const DIRECTIONS: { id: Direction; label: string; degree: number }[] = [
 
 const FLOOR_METERS = 3;
 const UNKNOWN_LEVELS = 3;
-const SHADE_RANGE_M = 200;
+// 동지 아침·저녁 해가 낮을 때 30층 건물 그림자가 400m 넘게 뻗으므로 600m까지 본다.
+const SHADE_RANGE_M = 600;
 const STEP_MINUTES = 10;
 const STREET_LIGHT_SHARE = 0.45;
 const WINTER_SOLSTICE = "2026-12-21";
+// 일조 시간은 건축법 일조 기준과 같이 동지 08~16시 안에서만 센다. 하루 그래프(slots)는 그대로 둔다.
+const COUNT_FROM = 8 * 60;
+const COUNT_TO = 16 * 60;
 
 const metersPerLat = 111000;
 const metersPerLng = (lat: number) => 111000 * Math.cos((lat * Math.PI) / 180);
@@ -166,7 +170,7 @@ function sunlightOn(date: string, window: { lat: number; lng: number; height: nu
     }
     slots.push(lit);
   }
-  const litMinutes = slots.flatMap((lit, i) => (lit ? [i * STEP_MINUTES] : []));
+  const litMinutes = slots.flatMap((lit, i) => (lit && i * STEP_MINUTES >= COUNT_FROM && i * STEP_MINUTES < COUNT_TO ? [i * STEP_MINUTES] : []));
   return {
     minutes: litMinutes.length * STEP_MINUTES,
     start: litMinutes.length ? timeLabel(litMinutes[0]) : "",

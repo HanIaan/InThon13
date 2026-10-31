@@ -28,6 +28,7 @@ import {
   indicatorText,
   isUsable,
   reverseAddress,
+  scoreLookup,
   type GridResponse,
   type Inspect,
 } from "@/lib/api";
@@ -95,6 +96,7 @@ export default function Home() {
   const [up, setUp] = useState(false);
   const [grid, setGrid] = useState<GridResponse | null>(null);
   const [details, setDetails] = useState<Partial<Record<Slot, Inspect>> | null>(null);
+  const [area, setArea] = useState<GridResponse | null>(null);
   const [notice, setNotice] = useState("");
   const [toast, setToast] = useState("");
   const [applied, setApplied] = useState(sensitivity);
@@ -140,11 +142,16 @@ export default function Home() {
     return map;
   }, [heatCells, hour, sensitivity, isHome]);
 
+  // 서버가 있으면 추천 장소도 지도와 같은 서버 점수로 고른다. 서버 점수를 받기 전에는 추천하지 않는다.
+  const areaScore = useMemo(() => (area ? scoreLookup(area.features) : undefined), [area]);
   const spots = useMemo(
-    () => (isHome ? [] : recommendSpots(cells, allSpots, point, hour, sensitivity)),
-    [cells, allSpots, point, hour, sensitivity, isHome],
+    () => (isHome || (API_BASE && !areaScore) ? [] : recommendSpots(cells, allSpots, point, hour, sensitivity, areaScore)),
+    [cells, allSpots, point, hour, sensitivity, isHome, areaScore],
   );
   const active = picked ? undefined : spots.find((s) => s.spot.id === activeSpot) ?? spots[0];
+  // 점수 카드와 시간별 그래프는 이 위치의 서버 점수(시간대별 inspect)를 쓴다.
+  const place = isHome ? home : active ? active.spot : picked ? point : null;
+  const placeKey = place ? `${place.lat},${place.lng}` : "";
 
   useGlideScroll();
 
@@ -200,11 +207,27 @@ export default function Home() {
     return () => control.abort();
   }, [slot, isHome, applied, mapView, detailed]);
 
+  // 추천 반경(1.2km)을 덮는 범위의 서버 점수를 한 번에 받는다.
   useEffect(() => {
-    if (!API_BASE || !isHome) return;
+    if (!API_BASE || isHome) {
+      setArea(null);
+      return;
+    }
+    const control = new AbortController();
+    const [dLat, dLng] = [0.012, 0.015];
+    fetchGrid([point.lng - dLng, point.lat - dLat, point.lng + dLng, point.lat + dLat], slot, applied, control.signal)
+      .then((data) => setArea(isUsable(data.meta?.data_mode) ? data : null))
+      .catch(() => {
+        if (!control.signal.aborted) setArea(null);
+      });
+    return () => control.abort();
+  }, [point.lat, point.lng, slot, applied, isHome]);
+
+  useEffect(() => {
+    if (!API_BASE || !place) return;
     const control = new AbortController();
     setDetails(null);
-    Promise.all(SLOTS.map((s) => fetchInspect(home.lat, home.lng, s.id, applied, control.signal)))
+    Promise.all(SLOTS.map((s) => fetchInspect(place.lat, place.lng, s.id, applied, control.signal)))
       .then((list) => setDetails(list.every((item) => isUsable(item.meta?.data_mode)) ? Object.fromEntries(SLOTS.map((s, i) => [s.id, list[i]])) : null))
       .catch((error) => {
         if (control.signal.aborted) return;
@@ -212,7 +235,7 @@ export default function Home() {
         setNotice(errorText(error));
       });
     return () => control.abort();
-  }, [home, applied, isHome]);
+  }, [placeKey, applied]);
 
   // 직접 고른 위치와 주소가 없는 건물은 좌표로 주소를 찾는다.
   const lookupPoint = isHome ? (home.address ? null : home) : picked ? point : null;
@@ -388,23 +411,47 @@ export default function Home() {
     [isHome, buildings, home, homeInput],
   );
   const homeResult = sleepOf(home, homeInput);
-  const sleep = details?.night?.comfort_score ?? homeResult.sleep;
+  // 서버가 있으면 지표 점수는 모두 서버 값이다. 서버에 값이 없는 지표는 종합에서 뺀다(로컬 값으로 채우지 않는다).
+  const serverScore = (slotId: Slot, key: "noise" | "light" | "crowd") => {
+    const value = details?.[slotId]?.indicators?.[key]?.score;
+    return value == null ? null : Math.round(value);
+  };
+  const sleep = details?.night?.comfort_score ?? (API_BASE ? null : homeResult.sleep);
   const sunPoint = report ? daylightScore(report.winter.minutes) : null;
-  const noiseDayPoint = Math.round(100 - homeCell.burdens.day.sound);
-  const noiseNightPoint = Math.round(100 - homeCell.burdens.night.sound);
-  const lightPoint = Math.round(100 - homeResult.light);
+  const noiseDayPoint = API_BASE ? serverScore("day", "noise") : Math.round(100 - homeCell.burdens.day.sound);
+  const noiseNightPoint = API_BASE ? serverScore("night", "noise") : Math.round(100 - homeCell.burdens.night.sound);
+  const lightPoint = API_BASE ? serverScore("night", "light") : Math.round(100 - homeResult.light);
+  const serverDb = (slotId: Slot) => {
+    const value = details?.[slotId]?.indicators?.noise?.raw_value;
+    return value == null ? null : Math.round(value);
+  };
+  const crowdLevel = (slotId: Slot) => {
+    const value = serverScore(slotId, "crowd");
+    return value === null ? "-" : level(100 - value);
+  };
+  const noisePoints = [noiseDayPoint, noiseNightPoint].filter((v): v is number => v !== null);
   const homeParts = [
     { name: "일조", score: sunPoint ?? 0, weight: sensitivity.sun },
-    { name: "소음", score: (noiseDayPoint + noiseNightPoint) / 2, weight: sensitivity.sound },
-    { name: "빛공해", score: lightPoint, weight: sensitivity.light },
+    { name: "소음", score: noisePoints.length ? noisePoints.reduce((a, b) => a + b) / noisePoints.length : 0, weight: noisePoints.length ? sensitivity.sound : 0 },
+    { name: "빛공해", score: lightPoint ?? 0, weight: lightPoint === null ? 0 : sensitivity.light },
   ];
-  const total = sunPoint === null ? null : homeTotal(homeParts);
-  const score = target ? (isHome ? total : restScore(burden!, sensitivity)) : null;
+  const total = sunPoint === null || (API_BASE && !details) ? null : homeTotal(homeParts);
+  const restNow = details?.[slot]?.comfort_score;
+  const restValue = API_BASE ? (restNow == null ? null : Math.round(restNow)) : burden ? restScore(burden, sensitivity) : null;
+  const score = target ? (isHome ? total : restValue) : null;
   const scoreGrade = grade(score ?? 0);
-  const label = score === null ? (isHome ? "계산 중" : "데이터 없음") : isHome ? homeVerdict(score) : scoreGrade.label;
+  const pending = API_BASE && !details;
+  const label = score === null ? (isHome || pending ? "계산 중" : "데이터 없음") : isHome ? homeVerdict(score) : scoreGrade.label;
   const detail = details?.night;
   const levelOf = (sense: Sense) => {
     if (!target || !burden) return "-";
+    if (!isHome && sense === "light" && lightOff) return "야간 전용";
+    const item = details?.[isHome ? "night" : slot]?.indicators?.[sense === "sound" ? "noise" : sense];
+    if (API_BASE && item) {
+      if (item.score == null) return indicatorText(item) ?? "정보 없음";
+      if (sense === "sound" && item.raw_value != null) return `약 ${Math.round(item.raw_value)}dB`;
+      return level(100 - item.score);
+    }
     if (!isHome) {
       if (sense === "sound") return `약 ${target.cell.noiseDb[slot]}dB`;
       return sense === "light" && lightOff ? "야간 전용" : level(burden[sense]);
@@ -455,7 +502,16 @@ export default function Home() {
           picked={picked ? { name: found?.name ?? "선택한 위치", detail: found?.address ?? `${pointCell.area} 인근`, score } : null}
           spots={spots}
           activeId={active?.spot.id ?? null}
-          burdenOf={(item) => burdenAt(item.cell.burdens, hour)}
+          burdenOf={(item) => {
+            // 펼친 장소(=점수 카드의 장소)는 서버 지표 점수로 부담을 보여 준다.
+            const indicators = API_BASE && item.spot.id === active?.spot.id ? details?.[slot]?.indicators : undefined;
+            if (!indicators) return burdenAt(item.cell.burdens, hour);
+            const burdenOf = (key: "noise" | "light" | "crowd") => {
+              const value = indicators[key]?.score;
+              return value == null ? null : 100 - value;
+            };
+            return { sound: burdenOf("noise"), light: burdenOf("light"), crowd: burdenOf("crowd") };
+          }}
           lightOff={lightOff}
           onChoose={chooseSpot}
         />
@@ -506,13 +562,13 @@ export default function Home() {
                         dial={<DirectionDial input={homeInput} onChange={setHomeInput} />}
                       />
                     ) : (
-                      <LightCard level={level(homeResult.light)} score={lightPoint} sleep={sleep} />
+                      <LightCard level={lightPoint === null ? "-" : level(100 - lightPoint)} score={lightPoint} sleep={sleep} />
                     )}
                   </div>
                   <NoiseCard
                     isDay={showDay}
-                    noise={target.cell.noiseDb[showDay ? "day" : "night"]}
-                    crowd={level(target.cell.burdens[showDay ? "day" : "night"].crowd)}
+                    noise={API_BASE ? serverDb(showDay ? "day" : "night") : target.cell.noiseDb[showDay ? "day" : "night"]}
+                    crowd={API_BASE ? crowdLevel(showDay ? "day" : "night") : level(target.cell.burdens[showDay ? "day" : "night"].crowd)}
                     score={showDay ? noiseDayPoint : noiseNightPoint}
                     sensor={nearestSensor(home.lat, home.lng)}
                     daylight={sensorDaylight(home.lat, home.lng)}
@@ -524,7 +580,11 @@ export default function Home() {
                     <div className="report-card">
                       <RestHours
                         hour={hour}
-                        scoreAt={(mark) => restScore(burdenAt(target.cell.burdens, mark), sensitivity)}
+                        scoreAt={(mark) => {
+                          if (!API_BASE) return restScore(burdenAt(target.cell.burdens, mark), sensitivity);
+                          const value = details?.[slotOf(mark)]?.comfort_score;
+                          return value == null ? null : Math.round(value);
+                        }}
                         onHour={setHour}
                       />
                     </div>
