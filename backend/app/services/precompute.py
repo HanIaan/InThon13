@@ -29,11 +29,16 @@ Rules (heuristics, not calibrated uncertainty probabilities):
   not decoded here (ingestion owns product-specific cloud filtering).
   Latest period_end per pixel is selected; ties prefer shortest period then
   product name. Pixel confidence = 0.55 * covered fraction (0.8 penalty for QF=1).
+* Noise model (optional, ``--noise-model poi`` / ``NOISE_MODEL=poi``, default off):
+  cells with a direct sensor keep the rules above; every other noise cell is replaced
+  by the versioned POI model artifact — always ``estimated`` / ``model``, never
+  ``observed``. Off by default, so an unset flag reproduces the rules above exactly.
 """
 from __future__ import annotations
 
 import argparse
 import math
+import os
 from collections import defaultdict
 from dataclasses import replace
 from datetime import datetime, time, timedelta
@@ -255,7 +260,7 @@ def source_metadata(data, dong_geoms, now):
     return output
 
 
-def build_snapshot(directory, max_distance_m=1000.0):
+def build_snapshot(directory, max_distance_m=1000.0, *, noise_model="off"):
     if not math.isfinite(max_distance_m) or max_distance_m <= 0:
         raise ValueError("max_distance_m must be positive and finite")
     data = load_processed(directory)
@@ -267,6 +272,15 @@ def build_snapshot(directory, max_distance_m=1000.0):
     codes = list(dong_geoms)
     dong_tree = STRtree(list(dong_geoms.values()))
     fields = sensor_fields(data)
+    predictor = None
+    if noise_model and str(noise_model).strip().lower() != "off":
+        # Imported lazily so the default path never loads the modeling package.
+        from app.modeling.noise.service import predictor_from_env
+        predictor = predictor_from_env(directory, noise_model)
+        if predictor is None:
+            raise ValueError(f"unsupported noise model: {noise_model!r} (expected 'off' or 'poi')")
+        predictor.attach_sensors({slot.value: fields[slot, "noise"].records for slot in TimeSlot})
+        predictor.prepare(list(grid.cells_in_bbox(extent)))
     population = population_fields(data, dong_geoms)
     pixels = PixelField(data.lights)
     cells, grids = [], []
@@ -283,6 +297,8 @@ def build_snapshot(directory, max_distance_m=1000.0):
         nasa = pixels.value(polygon)
         for slot in TimeSlot:
             noise = fields[slot, "noise"].value(ix, iy, max_distance_m)
+            if predictor is not None and noise.method != "direct":
+                noise = predictor.value(ix, iy, slot)
             # One monthly NASA value for every applicable slot; S-DoT lux never enters the score.
             light = missing(True) if slot not in LIGHT_APPLICABLE_SLOTS else replace(nasa)
             cells.append(CellIndicators(gid, slot, noise, light, crowd_value(land_area, overlaps, population, slot)))
@@ -293,8 +309,9 @@ def build_snapshot(directory, max_distance_m=1000.0):
     return Snapshot(cells, grids, sources, sensors), data
 
 
-def precompute(settings, *, local_only=False, max_distance_m=1000.0):
-    snapshot, data = build_snapshot(settings.processed_data_dir, max_distance_m)
+def precompute(settings, *, local_only=False, max_distance_m=1000.0, noise_model="off"):
+    snapshot, data = build_snapshot(settings.processed_data_dir, max_distance_m,
+                                    noise_model=noise_model)
     path = Path(settings.processed_data_dir) / SNAPSHOT_NAME
     write_snapshot(path, snapshot)
     if settings.database_url and not local_only:
@@ -307,9 +324,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-only", action="store_true", help="publish SQLite only, even if DATABASE_URL is configured")
     parser.add_argument("--max-distance-m", type=float, default=1000.0)
+    parser.add_argument("--noise-model", choices=["off", "poi"],
+                        default=os.environ.get("NOISE_MODEL", "off"),
+                        help="noise model for cells without a direct sensor (default: $NOISE_MODEL or off)")
     args = parser.parse_args()
     try:
-        snapshot = precompute(get_settings(), local_only=args.local_only, max_distance_m=args.max_distance_m)
+        snapshot = precompute(get_settings(), local_only=args.local_only,
+                              max_distance_m=args.max_distance_m, noise_model=args.noise_model)
     except Exception:
         # Connection errors can contain credentials; never print their original text.
         parser.exit(1, "Precomputation failed. Check processed file contracts, directory permissions and database readiness.\n")
