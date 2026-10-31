@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import Landing from "@/components/Landing";
 import { Dock, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
 import { DirectionDial, FloorInput, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
@@ -75,7 +76,7 @@ const HOME_ZOOM = 15;
 const HOME_SEARCH_M = 1500;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
-export default function Home() {
+function Home({ initialTab }: { initialTab: "rest" | "home" }) {
   const [hour, setHour] = useState(23);
   const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 4, light: 2, crowd: 3, sun: 3 });
   const [point, setPoint] = useState(START_POINT);
@@ -85,7 +86,7 @@ export default function Home() {
   const [homeInput, setHomeInput] = useState<HomeInput>({ floor: 3, direction: "south" });
   const [buildings, setBuildings] = useState<Building[] | null>(null);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"rest" | "home">("rest");
+  const [tab, setTab] = useState<"rest" | "home">(initialTab);
   const [tuneOpen, setTuneOpen] = useState(true);
   const [up, setUp] = useState(false);
   const [grid, setGrid] = useState<GridResponse | null>(null);
@@ -528,4 +529,9 @@ export default function Home() {
       )}
     </>
   );
+}
+
+export default function Page() {
+  const [start, setStart] = useState<"rest" | "home" | null>(null);
+  return start ? <Home initialTab={start} /> : <Landing onStart={setStart} />;
 }
