@@ -4,8 +4,8 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { GridFeature } from "@/lib/api";
-import { BOUNDS, type Cell, type Home, type Recommendation } from "@/lib/data";
-import { CELL_SIZE as CELL, SEOUL, type MapView } from "@/lib/seoul";
+import { type Cell, type Home, type Recommendation } from "@/lib/data";
+import { SEOUL, type MapView } from "@/lib/seoul";
 import { restColor } from "@/lib/rest";
 
 type Point = { lat: number; lng: number };
@@ -27,12 +27,6 @@ type Props = {
 };
 
 const EMPTY_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
-const COLS = Math.ceil((BOUNDS.east - BOUNDS.west) / CELL.lng);
-const ROWS = Math.ceil((BOUNDS.north - BOUNDS.south) / CELL.lat);
-const HEAT_BOUNDS: L.LatLngBoundsExpression = [
-  [BOUNDS.south - CELL.lat / 2, BOUNDS.west - CELL.lng / 2],
-  [BOUNDS.south + (ROWS - 0.5) * CELL.lat, BOUNDS.west + (COLS - 0.5) * CELL.lng],
-];
 const MAX_CANVAS = 2048;
 
 // 격자가 지도와 살짝 기울어 있어 칸마다 조금 크게 그려 틈을 메우고, CSS 흐림으로 부드럽게 만든다.
@@ -64,24 +58,28 @@ function heatImage(cells: Cell[], scores: Map<string, number>, size: { lat: numb
 
 // 서버 격자는 크기가 달라질 수 있어 도형 그대로 그린다. 신뢰도가 낮을수록 옅게 표시한다.
 function featureImage(features: GridFeature[]) {
+  const rings = features
+    .filter((f) => f.properties.comfort_score != null && f.geometry.type === "Polygon")
+    .map((f) => ({ ring: (f.geometry.coordinates as number[][][])[0], properties: f.properties }));
+  const points = rings.flatMap((f) => f.ring);
+  const west = Math.min(...points.map((p) => p[0]));
+  const east = Math.max(...points.map((p) => p[0]));
+  const south = Math.min(...points.map((p) => p[1]));
+  const north = Math.max(...points.map((p) => p[1]));
   const canvas = document.createElement("canvas");
-  canvas.width = COLS * 2;
-  canvas.height = ROWS * 2;
+  canvas.width = MAX_CANVAS;
+  canvas.height = Math.ceil((MAX_CANVAS * (north - south)) / (east - west));
   const ctx = canvas.getContext("2d")!;
-  const west = BOUNDS.west - CELL.lng / 2;
-  const north = BOUNDS.south + (ROWS - 0.5) * CELL.lat;
-  const x = (lng: number) => ((lng - west) / (COLS * CELL.lng)) * canvas.width;
-  const y = (lat: number) => ((north - lat) / (ROWS * CELL.lat)) * canvas.height;
-  for (const { geometry, properties } of features) {
-    if (properties.comfort_score == null || geometry.type !== "Polygon") continue;
-    const ring = (geometry.coordinates as number[][][])[0];
+  const x = (lng: number) => ((lng - west) / (east - west)) * canvas.width;
+  const y = (lat: number) => ((north - lat) / (north - south)) * canvas.height;
+  for (const { ring, properties } of rings) {
     ctx.globalAlpha = 0.25 + 0.75 * (properties.confidence ?? 1);
-    ctx.fillStyle = `rgb(${restColor(properties.comfort_score).join(",")})`;
+    ctx.fillStyle = `rgb(${restColor(properties.comfort_score!).join(",")})`;
     ctx.beginPath();
     ring.forEach(([lng, lat], i) => (i ? ctx.lineTo(x(lng), y(lat)) : ctx.moveTo(x(lng), y(lat))));
     ctx.fill();
   }
-  return canvas.toDataURL();
+  return { url: canvas.toDataURL(), bounds: [[south, west], [north, east]] as L.LatLngTuple[] };
 }
 
 const REST_ZOOM = 15.5;
@@ -156,7 +154,7 @@ export default function RestMap({
       maxZoom: 18,
     }).addTo(instance);
 
-    heat.current = L.imageOverlay(EMPTY_IMAGE, HEAT_BOUNDS, { className: "heat" }).addTo(instance);
+    heat.current = L.imageOverlay(EMPTY_IMAGE, [[SEOUL.south, SEOUL.west], [SEOUL.north, SEOUL.east]], { className: "heat" }).addTo(instance);
     renderer.current = L.canvas().addTo(instance);
     buildings.current = L.layerGroup().addTo(instance);
     pins.current = L.layerGroup().addTo(instance);
@@ -195,11 +193,8 @@ export default function RestMap({
   useEffect(() => {
     const overlay = heat.current;
     if (!overlay) return;
-    if (features) {
-      overlay.setBounds(L.latLngBounds(HEAT_BOUNDS as L.LatLngTuple[]));
-      overlay.setUrl(featureImage(features));
-    } else if (cells.length) {
-      const image = heatImage(cells, scores, cellSize);
+    if (cells.length || features?.length) {
+      const image = features?.length ? featureImage(features) : heatImage(cells, scores, cellSize);
       overlay.setBounds(L.latLngBounds(image.bounds));
       overlay.setUrl(image.url);
     }

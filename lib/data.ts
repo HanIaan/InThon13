@@ -17,9 +17,6 @@ export type Cell = {
   confidence: Burden;
 };
 
-// 첫 화면과 백엔드 격자 요청에 쓰는 안암 일대 영역이다.
-export const BOUNDS = { south: 37.5745, north: 37.5985, west: 127.0145, east: 127.0445 };
-
 export const PLACES = places as { name: string; lat: number; lng: number }[];
 
 const KM = { lat: 111, lng: 88 };

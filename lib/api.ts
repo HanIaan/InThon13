@@ -2,8 +2,12 @@ import type { Sensitivity, Slot } from "./rest";
 
 // 백엔드 연동 가이드 기준의 클라이언트다. 주소가 없으면 화면은 저장된 격자 데이터로 동작한다.
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
+// mock 응답은 실제 수치가 아니라서 화면에 쓰지 않는다. 연동을 시험할 때만 켠다.
+const USE_MOCK = process.env.NEXT_PUBLIC_API_USE_MOCK === "1";
 
-export type DataStatus = "mock" | "estimated" | "measured" | "missing";
+export const isUsable = (mode?: string) => USE_MOCK || mode !== "mock";
+
+export type DataStatus = "mock" | "estimated" | "observed" | "missing";
 
 export type GridProperties = {
   comfort_score: number | null;
@@ -56,9 +60,8 @@ export function fetchGrid(bbox: number[], slot: Slot, sensitivity: Sensitivity, 
   return get<GridResponse>("/api/v1/grid", { bbox: bbox.join(","), ...query(slot, sensitivity) }, signal);
 }
 
-// 가이드에 경로가 없어 grid와 같은 규칙으로 정했다. 백엔드 경로와 다르면 이 값만 바꾸면 된다.
 export function fetchInspect(lat: number, lng: number, slot: Slot, sensitivity: Sensitivity, signal: AbortSignal) {
-  return get<Inspect>("/api/v1/inspect", { lat: String(lat), lng: String(lng), ...query(slot, sensitivity) }, signal);
+  return get<Inspect>("/api/v1/location/inspect", { lat: String(lat), lng: String(lng), ...query(slot, sensitivity) }, signal);
 }
 
 // 직접 고른 위치의 주소는 OpenStreetMap 역지오코딩으로 찾는다.

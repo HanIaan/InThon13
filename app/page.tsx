@@ -25,12 +25,12 @@ import {
   fetchGrid,
   fetchInspect,
   indicatorText,
+  isUsable,
   reverseAddress,
   type GridResponse,
   type Inspect,
 } from "@/lib/api";
 import {
-  BOUNDS,
   cellForHome,
   distanceMeters,
   homeAtPoint,
@@ -176,11 +176,14 @@ export default function Home() {
   }, [sensitivity]);
 
   useEffect(() => {
-    if (!API_BASE) return;
+    if (!API_BASE || !mapView || !detailed) {
+      setGrid(null);
+      return;
+    }
     const control = new AbortController();
-    fetchGrid([BOUNDS.west, BOUNDS.south, BOUNDS.east, BOUNDS.north], isHome ? "night" : slot, applied, control.signal)
+    fetchGrid([mapView.west, mapView.south, mapView.east, mapView.north], isHome ? "night" : slot, applied, control.signal)
       .then((data) => {
-        setGrid(data);
+        setGrid(isUsable(data.meta?.data_mode) ? data : null);
         setNotice("");
       })
       .catch((error) => {
@@ -189,14 +192,14 @@ export default function Home() {
         setNotice(errorText(error));
       });
     return () => control.abort();
-  }, [slot, isHome, applied]);
+  }, [slot, isHome, applied, mapView, detailed]);
 
   useEffect(() => {
     if (!API_BASE || !isHome) return;
     const control = new AbortController();
     setDetails(null);
     Promise.all(SLOTS.map((s) => fetchInspect(home.lat, home.lng, s.id, applied, control.signal)))
-      .then((list) => setDetails(Object.fromEntries(SLOTS.map((s, i) => [s.id, list[i]]))))
+      .then((list) => setDetails(list.every((item) => isUsable(item.meta?.data_mode)) ? Object.fromEntries(SLOTS.map((s, i) => [s.id, list[i]])) : null))
       .catch((error) => {
         if (control.signal.aborted) return;
         setDetails(null);
