@@ -224,7 +224,7 @@ def test_single_available_indicator_renormalization(client):
             return CellIndicators(
                 grid_id=grid_id,
                 time_slot=time_slot,
-                noise=IndicatorValue(raw_value=40.0, raw_unit="dB", status=DataStatus.observed, confidence=0.9),  # 40dB is perfect 100.0 score
+                noise=IndicatorValue(raw_value=30.0, raw_unit="dB", status=DataStatus.observed, confidence=0.9),  # below Seoul p5 -> 100.0 score
                 light=IndicatorValue(raw_value=None, raw_unit=None, status=DataStatus.missing, confidence=0.0),
                 crowd=IndicatorValue(raw_value=None, raw_unit=None, status=DataStatus.missing, confidence=0.0),
             )
