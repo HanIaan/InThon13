@@ -76,8 +76,9 @@ const DayView = dynamic(() => import("@/components/DayView"), { ssr: false });
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
 const HOME_SEARCH_M = 1500;
-const DAY_HOUR = 12;
-const NIGHT_HOUR = 22;
+const DESIGN_WIDE = [1024, 760];
+const DESIGN_TALL = [390, 812];
+const MAX_UI_SCALE = 1.6;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
 export default function Home() {
@@ -147,12 +148,25 @@ export default function Home() {
 
   useGlideScroll();
 
+  // 가로형 1024×760, 세로형 390×812 화면을 기준으로 UI 배율을 정한다.
+  useEffect(() => {
+    const fit = () => {
+      const { innerWidth: width, innerHeight: height } = window;
+      const [baseWidth, baseHeight] = width > height ? DESIGN_WIDE : DESIGN_TALL;
+      const scale = Math.min(MAX_UI_SCALE, width / baseWidth, height / baseHeight);
+      document.documentElement.style.setProperty("--ui", scale.toFixed(3));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
+
   useEffect(() => {
     history.scrollRestoration = "manual";
     window.scrollTo({ top: 0, behavior: "instant" });
     requestAnimationFrame(() => document.documentElement.classList.add("snapping"));
     setHour(new Date().getHours());
-    if (window.innerWidth <= 860) setTuneOpen(false);
+    if (window.innerWidth <= window.innerHeight) setTuneOpen(false);
   }, []);
 
   // 슬라이더를 움직이는 동안에는 호출하지 않고 300ms 뒤에 반영한다.
@@ -426,11 +440,9 @@ export default function Home() {
       <TopSwitch isHome={isHome} onChange={setTab} />
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
-      {!up && (
-        <TuneCard open={tuneOpen} isHome={isHome} onToggle={() => setTuneOpen(!tuneOpen)}>
-          {sliders}
-        </TuneCard>
-      )}
+      <TuneCard open={tuneOpen} hidden={up} isHome={isHome} onToggle={() => setTuneOpen(!tuneOpen)}>
+        {sliders}
+      </TuneCard>
 
       {!isHome && !up && (
         <SpotsPanel
@@ -504,14 +516,6 @@ export default function Home() {
                 </>
               ) : (
                 <>
-                  <div className="side-head">
-                    <ModeSwitch
-                      label="낮과 밤"
-                      options={[{ id: "day", label: "낮" }, { id: "night", label: "밤" }]}
-                      value={slot === "day" ? "day" : "night"}
-                      onChange={(next) => setHour(next === "day" ? DAY_HOUR : NIGHT_HOUR)}
-                    />
-                  </div>
                   <div className="slot">
                     <div className="report-card">
                       <RestHours

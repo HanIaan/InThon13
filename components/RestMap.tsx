@@ -171,6 +171,8 @@ export default function RestMap({
     sendView();
 
     L.control.zoom({ position: "topright" }).addTo(instance);
+    // 파일 탭이 오른쪽 아래를 쓰므로 지도 출처는 왼쪽 아래에 둔다.
+    instance.attributionControl.setPosition("bottomleft");
     // 창 크기가 바뀌면 Leaflet 좌표가 어긋나므로 다시 계산한다.
     const observer = new ResizeObserver(() => instance.invalidateSize());
     observer.observe(host.current);
