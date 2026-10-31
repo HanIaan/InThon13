@@ -82,9 +82,9 @@ export function LocateButton({ busy, onClick }: { busy: boolean; onClick: () => 
   );
 }
 
-export function TopSwitch({ isHome, onChange }: { isHome: boolean; onChange: (tab: "rest" | "home") => void }) {
+export function TopSwitch({ isHome, sheetUp, onChange }: { isHome: boolean; sheetUp: boolean; onChange: (tab: "rest" | "home") => void }) {
   return (
-    <div className="switch glass" role="tablist" aria-label="보기 선택">
+    <div className={`switch glass ${sheetUp && !isHome ? "on-opening" : ""}`} role="tablist" aria-label="보기 선택">
       <button role="tab" aria-selected={!isHome} onClick={() => onChange("rest")}>휴식</button>
       <button role="tab" aria-selected={isHome} onClick={() => onChange("home")}>주거</button>
     </div>
@@ -211,7 +211,7 @@ export function Dock({
   };
 
   return (
-    <div className={`dock ${showControls ? "" : "up"}`}>
+    <div className={`dock ${showControls ? "" : `up ${isHome ? "" : "on-opening"}`}`}>
       {showControls && (isHome ? (
         <p className="slots basis glass">건물을 눌러 선택</p>
       ) : (

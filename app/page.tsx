@@ -555,7 +555,7 @@ export default function Home() {
         />
       </div>
 
-      <TopSwitch isHome={isHome} onChange={switchTab} />
+      <TopSwitch isHome={isHome} sheetUp={up} onChange={switchTab} />
       {!up && <LocateButton busy={locating} onClick={locate} />}
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 

@@ -416,6 +416,9 @@ html.locked { overflow: hidden; }
   .page.rest .sense-tune .range input { height: 18px; }
   .page.rest .slot { min-height: 0; }
   .page.rest .story, .page.rest .side { align-self: stretch; align-content: start; grid-auto-rows: max-content; min-height: 0; overflow-y: auto; }
+  /* 스위치와 검색바가 지도 창 경계에 걸치지 않게 창 가운데로 옮긴다. 178px은 왼쪽 칸 폭의 절반이다. */
+  .switch.on-opening { top: 66px; transform: translateX(calc(-50% + 178px)); }
+  .dock.on-opening { transform: translateX(calc(-50% + 178px)); }
   .page.rest .not-left-stack { display: none; }
   .page.rest .report-card.only-left-stack { display: block; }
   .page.rest .sense-tune.only-left-stack { display: grid; }
