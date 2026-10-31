@@ -23,6 +23,7 @@ import {
   API_BASE,
   errorText,
   fetchGrid,
+  fetchGridChunks,
   fetchInspect,
   indicatorText,
   isUsable,
@@ -54,7 +55,7 @@ import {
   type Slot,
 } from "@/lib/rest";
 import { KAKAO_KEY, kakaoAddress, type SearchPlace } from "@/lib/kakao";
-import { buildingAt, CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, OVERVIEW_SIZE, useSeoul, type MapView } from "@/lib/seoul";
+import { buildingAt, CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, OVERVIEW_SIZE, SEOUL, useSeoul, type MapView } from "@/lib/seoul";
 import { useGlideScroll } from "@/lib/use-glide-scroll";
 
 // 역지오코딩 주소의 "안암동 안암동3가"처럼 겹치는 말과 건물 이름을 뺀다.
@@ -102,6 +103,7 @@ export default function Home() {
   const [dayOpen, setDayOpen] = useState(false);
   const [mapView, setMapView] = useState<MapView | null>(null);
   const homeSearch = useRef(0);
+  const gridChunks = useRef(new Map<string, Promise<GridResponse>>());
 
   const isHome = tab === "home";
   const showDay = isHome && view === "day";
@@ -174,13 +176,19 @@ export default function Home() {
   }, [sensitivity]);
 
   useEffect(() => {
-    if (!API_BASE || !mapView || !detailed) {
+    if (!API_BASE || !mapView) {
       setGrid(null);
       return;
     }
     const control = new AbortController();
-    fetchGrid([mapView.west, mapView.south, mapView.east, mapView.north], isHome ? "night" : slot, applied, control.signal)
+    const timeSlot = isHome ? "night" : slot;
+    // 축소했을 때도 서버 점수로 칠한다. 평균 낸 정적 격자를 쓰면 높은 부담이 묽어져 빨간 곳이 사라진다.
+    const request = detailed
+      ? fetchGrid([mapView.west, mapView.south, mapView.east, mapView.north], timeSlot, applied, control.signal)
+      : fetchGridChunks(mapView, SEOUL, timeSlot, applied, gridChunks.current);
+    request
       .then((data) => {
+        if (control.signal.aborted) return;
         setGrid(isUsable(data.meta?.data_mode) ? data : null);
         setNotice("");
       })

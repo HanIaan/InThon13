@@ -17,6 +17,7 @@ export type GridProperties = {
 };
 
 export type GridFeature = {
+  id?: string;
   geometry: { type: string; coordinates: unknown };
   properties: GridProperties;
 };
@@ -58,6 +59,42 @@ async function get<T>(path: string, params: Record<string, string>, signal: Abor
 
 export function fetchGrid(bbox: number[], slot: Slot, sensitivity: Sensitivity, signal: AbortSignal) {
   return get<GridResponse>("/api/v1/grid", { bbox: bbox.join(","), ...query(slot, sensitivity) }, signal);
+}
+
+// 서버는 한 번에 6,000칸까지만 주므로, 넓게 볼 때는 0.1° 구역(약 2,400칸)으로 나눠 받아 합친다.
+// 구역 응답은 시간대·민감도별로 저장해 두고, 지도를 옮길 때 다시 받지 않는다.
+const CHUNK_DEG = 0.1;
+export type Bounds = { south: number; north: number; west: number; east: number };
+
+export async function fetchGridChunks(view: Bounds, area: Bounds, slot: Slot, sensitivity: Sensitivity, cache: Map<string, Promise<GridResponse>>) {
+  const params = query(slot, sensitivity);
+  const index = (value: number, start: number) => Math.floor((value - start) / CHUNK_DEG);
+  const [x0, x1] = [index(Math.max(view.west, area.west), area.west), index(Math.min(view.east, area.east), area.west)];
+  const [y0, y1] = [index(Math.max(view.south, area.south), area.south), index(Math.min(view.north, area.north), area.south)];
+  const requests: Promise<GridResponse>[] = [];
+  for (let x = x0; x <= x1; x++) {
+    for (let y = y0; y <= y1; y++) {
+      const [west, south] = [area.west + x * CHUNK_DEG, area.south + y * CHUNK_DEG];
+      const key = `${new URLSearchParams(params)}&chunk=${x}_${y}`;
+      if (!cache.has(key)) {
+        // 다른 요청이 취소해도 저장된 응답이 깨지지 않게 signal 없이 받는다. 서울 밖 구역은 빈 결과로 둔다.
+        const bbox = [west, south, west + CHUNK_DEG, south + CHUNK_DEG].map((v) => v.toFixed(4)).join(",");
+        const request = get<GridResponse>("/api/v1/grid", { bbox, ...params }, new AbortController().signal).catch((error) => {
+          if (error instanceof ApiError && error.code === "out_of_coverage") return { features: [] } as GridResponse;
+          cache.delete(key);
+          throw error;
+        });
+        cache.set(key, request);
+      }
+      requests.push(cache.get(key)!);
+    }
+  }
+  const chunks = await Promise.all(requests);
+  // 구역 경계에 걸친 칸은 양쪽 응답에 모두 들어 있어 한 번만 남긴다.
+  const features = new Map<string, GridFeature>();
+  for (const chunk of chunks) for (const feature of chunk.features) features.set(feature.id ?? JSON.stringify(feature.geometry), feature);
+  const meta = chunks.find((chunk) => chunk.meta && !isUsable(chunk.meta.data_mode))?.meta ?? chunks.find((chunk) => chunk.meta)?.meta;
+  return { features: [...features.values()], meta } as GridResponse;
 }
 
 export function fetchInspect(lat: number, lng: number, slot: Slot, sensitivity: Sensitivity, signal: AbortSignal) {
