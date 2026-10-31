@@ -45,7 +45,6 @@ export function MainSheet({
   side: ReactNode;
 }) {
   const open = () => document.querySelector(".sheet")?.scrollIntoView({ behavior: "smooth" });
-  const search = encodeURIComponent(target.title);
   const facts = target.facts.filter((fact) => fact.value);
   return (
     <section className="sheet">
@@ -71,11 +70,11 @@ export function MainSheet({
             ) : (
               <p className="no-facts">등록된 정보 없음</p>
             )}
-            <div className="links">
-              {target.website && <a href={target.website} target="_blank" rel="noreferrer">웹사이트</a>}
-              <a href={`https://map.naver.com/p/search/${search}`} target="_blank" rel="noreferrer">네이버 지도</a>
-              <a href={`https://map.kakao.com/?q=${search}`} target="_blank" rel="noreferrer">카카오맵</a>
-            </div>
+            {target.website && (
+              <div className="links">
+                <a href={target.website} target="_blank" rel="noreferrer">웹사이트</a>
+              </div>
+            )}
           </div>
           <div className="score-block">
             <p className="where">{scoreTitle}</p>

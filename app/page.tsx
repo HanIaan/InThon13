@@ -51,8 +51,6 @@ import {
   SENSE_LABEL,
   slotOf,
   SLOTS,
-  topSense,
-  type Burden,
   type Sense,
   type Sensitivity,
   type Slot,
@@ -272,12 +270,12 @@ export default function Home() {
   const live = Boolean(API_BASE && grid);
   const hasStatus = (value: string) => grid?.features.some((f) => f.properties.data_status === value);
   const isDemo = live && (grid?.meta?.data_mode === "mock" || hasStatus("mock"));
-  const badge = isDemo ? "데모 데이터" : "추정 데이터";
 
   // 지금 정보를 보여 줄 대상: 주거 건물, 추천 장소, 직접 고른 위치 중 하나다.
   const found = lookup?.key === lookupKey ? lookup : null;
   const looking = "주소를 찾는 중";
   const missing = "";
+  const noInfo = "정보 없음";
   const foundAddress = found ? found.address ?? missing : looking;
   const target = isHome
     ? {
@@ -298,8 +296,8 @@ export default function Home() {
           line: `${active.spot.kind} · 도보 ${Math.max(1, Math.round(active.meters / 70))}분 · ${active.meters}m`,
           cell: active.cell,
           facts: [
-            { label: "주소", value: active.spot.address ?? missing },
-            { label: "운영 시간", value: active.spot.hours ?? missing },
+            { label: "주소", value: active.spot.address ?? noInfo },
+            { label: "운영 시간", value: active.spot.hours ?? noInfo },
           ],
           website: active.spot.website,
           lat: active.spot.lat,
@@ -311,7 +309,8 @@ export default function Home() {
             line: `직접 선택 · ${pointCell.area} 인근`,
             cell: pointCell,
             facts: [
-              { label: "주소", value: foundAddress },
+              { label: "주소", value: found && !found.address ? noInfo : foundAddress },
+              { label: "운영 시간", value: noInfo },
             ],
             website: undefined,
             lat: point.lat,
@@ -347,8 +346,6 @@ export default function Home() {
     ? { value: daylightScore(report.winter.minutes), label: `동지 직사광 ${formatDuration(report.winter.minutes)}`, color: "var(--ink)" }
     : { value: null, label: "계산 중", color: "var(--muted)" };
   const scoreTitle = isHome ? "내 감각 수면 점수" : `${hourLabel(hour)} 내 감각 쉼 지수`;
-  const causeBurden = isHome ? { ...target?.cell.burdens.night, crowd: 0 } : { ...burden, light: lightOff ? 0 : burden?.light };
-  const cause = target ? `가장 큰 부담 ${SENSE_LABEL[topSense(causeBurden as Burden, sensitivity)]}` : "";
 
   return (
     <>
@@ -369,7 +366,6 @@ export default function Home() {
       </div>
 
       <TopSwitch isHome={isHome} onChange={setTab} />
-      <p className={`badge glass ${isDemo ? "demo" : ""}`}>{badge}</p>
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
       {!up && (
@@ -400,9 +396,8 @@ export default function Home() {
             scoreTitle={showDay ? "낮 햇빛 점수" : scoreTitle}
             score={showDay ? sunScore : sheetScore}
             secondary={isHome ? (showDay ? { label: "내 감각 수면 점수", value: score } : { label: "낮 햇빛 점수", value: sunScore.value }) : undefined}
-            cause={showDay ? undefined : cause}
             up={up}
-            emptyValues={[looking]}
+            emptyValues={[looking, noInfo]}
             left={
               <>
                 {isHome && (

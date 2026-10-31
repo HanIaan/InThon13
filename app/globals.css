@@ -315,7 +315,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
   .hours b { text-align: center; font-size: 15px; }
   .hours .on { background: var(--ink); color: #fff; }
   .place-head h1 { font-size: 24px; }
-  .place-head .where, .place-head .facts, .place-head .no-facts { display: none; }
+  .place-head .where, .place-head .no-facts { display: none; }
   .side .levels { margin: 0; }
   .page.home .side { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
   .page.home .side .mode-switch { grid-column: 1 / -1; }
