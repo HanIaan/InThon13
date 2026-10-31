@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { Dock, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
+import { HomeCandidates, VisitChecklist } from "@/components/HomeViews";
+import { RestHours, SpotsPanel } from "@/components/RestViews";
+import { GlassSheets, PlaceSheet, ScoreSheet } from "@/components/Sheets";
 import {
   API_BASE,
   errorText,
@@ -23,7 +27,6 @@ import {
   nearestHome,
   nearestToPoint,
   placePoint,
-  PLACES,
   recommendSpots,
   type Cell,
   type Home as HomePlace,
@@ -34,7 +37,6 @@ import {
   grade,
   homeLabel,
   homeScore,
-  HOUR_MARKS,
   hourLabel,
   level,
   restScore,
@@ -312,7 +314,6 @@ export default function Home() {
   const label = score === null ? "데이터 없음" : isHome ? homeLabel(score) : scoreGrade.label;
   const isSaved = saved.some((h) => h.id === home.id);
   const detail = details?.night;
-  const openSheet = () => document.querySelector(".sheet")?.scrollIntoView({ behavior: "smooth" });
   const ranked = saved
     .map((item) => {
       const cell = cellForHome(item, cells);
@@ -332,20 +333,8 @@ export default function Home() {
 
   const confidenceLabel = (value: number) => (value >= 0.7 ? "높음" : value >= 0.5 ? "보통" : "낮음");
 
-  const sliders = SENSES.map((s) => (
-    <label key={s} className="range">
-      <span>{SENSE_LABEL[s]} <b>{s === "light" && lightOff ? "야간 전용" : sensitivity[s]}</b></span>
-      <input
-        type="range"
-        min={0}
-        max={5}
-        step={1}
-        disabled={s === "light" && lightOff}
-        value={sensitivity[s]}
-        onChange={(e) => setSensitivity({ ...sensitivity, [s]: Number(e.target.value) })}
-      />
-    </label>
-  ));
+  const sliders = <SensitivitySliders value={sensitivity} lightOff={lightOff} onChange={setSensitivity} />;
+  const sheetScore = { value: score, label, color: scoreGrade.color };
 
   return (
     <>
@@ -366,251 +355,80 @@ export default function Home() {
         />
       </div>
 
-      <div className="switch glass" role="tablist" aria-label="보기 선택">
-        <button role="tab" aria-selected={!isHome} onClick={() => setTab("rest")}>휴식</button>
-        <button role="tab" aria-selected={isHome} onClick={() => setTab("home")}>주거</button>
-      </div>
-
+      <TopSwitch isHome={isHome} onChange={setTab} />
       <p className={`badge glass ${isDemo ? "demo" : ""}`}>{badge}</p>
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
       {!up && (
-        <aside className={`tune glass ${tuneOpen ? "open" : ""}`}>
-          <button className="tune-head" aria-expanded={tuneOpen} onClick={() => setTuneOpen(!tuneOpen)}>
-            내 감각<span aria-hidden="true">{tuneOpen ? "−" : "+"}</span>
-          </button>
-          {tuneOpen && (
-            <>
-              {sliders}
-              <div className="legend">
-                <i />
-                <p><span>{isHome ? "잠자리 주의" : "쉬기 어려움"}</span><span>{isHome ? "잠들기 좋음" : "쉬기 좋음"}</span></p>
-              </div>
-            </>
-          )}
-        </aside>
+        <TuneCard open={tuneOpen} isHome={isHome} onToggle={() => setTuneOpen(!tuneOpen)}>
+          {sliders}
+        </TuneCard>
       )}
 
       {!isHome && !up && (
-        <aside className="spots glass" aria-label="추천 휴식 장소">
-          <header>
-            <h2>지금 쉬기 좋은 곳</h2>
-            <p>{pointCell.area} 주변 · {hourLabel(hour)}</p>
-          </header>
-          <ol>
-            {picked && (
-              <li>
-                <button className="on">
-                  <i aria-hidden="true">●</i>
-                  <span>
-                    <b>{found?.name ?? "선택한 위치"}</b>
-                    <small>{found?.address ?? `${pointCell.area} 인근`}</small>
-                  </span>
-                  <strong>{score ?? "-"}</strong>
-                </button>
-              </li>
-            )}
-            {spots.map(({ spot, rank, score: value, meters, cell }) => (
-              <li key={spot.id}>
-                <button className={spot.id === active?.spot.id ? "on" : ""} onClick={() => chooseSpot(spot.id)}>
-                  <i>{rank}</i>
-                  <span>
-                    <b>{spot.name}</b>
-                    <small>{spot.kind} · {meters}m</small>
-                    {spot.id === active?.spot.id && (
-                      <small className="why">
-                        {SENSES.filter((s) => !(s === "light" && lightOff)).map((s) => `${SENSE_LABEL[s]} ${level(burdenAt(cell.burdens, hour)[s])}`).join(" · ")}
-                      </small>
-                    )}
-                  </span>
-                  <strong>{value}</strong>
-                </button>
-              </li>
-            ))}
-          </ol>
-          {spots.length === 0 && <p className="hint">주변에 추천할 장소가 없어요.</p>}
-          <p className="hint">지도에서 원하는 위치를 눌러도 볼 수 있어요.</p>
-        </aside>
+        <SpotsPanel
+          area={pointCell.area}
+          time={hourLabel(hour)}
+          picked={picked ? { name: found?.name ?? "선택한 위치", detail: found?.address ?? `${pointCell.area} 인근`, score } : null}
+          spots={spots}
+          activeId={active?.spot.id ?? null}
+          burdenOf={(item) => burdenAt(item.cell.burdens, hour)}
+          lightOff={lightOff}
+          onChoose={chooseSpot}
+        />
       )}
 
-      <div className="dock">
-        {!up && (isHome ? (
-          <p className="slots basis glass">건물을 눌러 선택 · 밤·새벽 평균</p>
-        ) : (
-          <label className="time glass">
-            <span>{hourLabel(hour)}</span>
-            <input
-              type="range"
-              min={0}
-              max={23}
-              step={1}
-              value={hour}
-              onChange={(e) => setHour(Number(e.target.value))}
-              aria-label="시간 선택"
-            />
-          </label>
-        ))}
-        <form
-          className="search glass"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (PLACES.includes(query)) {
-              pick(query);
-              setQuery("");
-            }
-          }}
-        >
-          <input
-            list="places"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              if (PLACES.includes(e.target.value)) {
-                pick(e.target.value);
-                setQuery("");
-              }
-            }}
-            placeholder="장소 검색"
-            aria-label="장소 검색"
-          />
-          <datalist id="places">{PLACES.map((p) => <option key={p} value={p} />)}</datalist>
-          <button type="submit">검색</button>
-        </form>
-      </div>
+      <Dock isHome={isHome} showControls={!up} hour={hour} query={query} onHour={setHour} onQuery={setQuery} onPick={pick} />
 
       {target && (
-        <main className={`page ${tab}`}>
-          <div className="snap-top" />
-          <div className="sheets">
-            <div className="sheet-glass" />
-            <section className="sheet place">
-            <button className={`peek ${up ? "hidden" : ""}`} onClick={openSheet}>
-              <span>{target.title}</span>
-              <strong>{score ?? "-"}</strong>
-              <em style={{ color: scoreGrade.color }}>{label}</em>
-            </button>
-            <div className={`place-grid ${isHome ? "" : "solid"}`}>
-              <div className="module place-info">
-                <p className="where">{target.line}</p>
-                <h1>{target.title}</h1>
-                <dl>
-                  {target.facts.map((fact) => (
-                    <div key={fact.label}>
-                      <dt>{fact.label}</dt>
-                      <dd className={fact.value === missing || fact.value === looking ? "empty" : ""}>{fact.value}</dd>
-                    </div>
+        <GlassSheets isHome={isHome}>
+          <PlaceSheet target={target} score={sheetScore} isHome={isHome} up={up} emptyValues={[missing, looking]} />
+          <ScoreSheet
+            heading={target.title}
+            subtitle={isHome ? undefined : `${target.line} · ${hourLabel(hour)}`}
+            score={sheetScore}
+            sliders={sliders}
+            story={
+              <>
+                <h2>{isHome ? "이 건물의 밤" : "이 장소의 지금"}</h2>
+                <p className="note">
+                  {isHome ? sleepBlocker(target.cell.burdens.night, sensitivity) : explain(burden!, sensitivity, score ?? 0)}
+                </p>
+                {isHome && detail?.notes?.map((note) => <p className="data-note" key={note}>{note}</p>)}
+                <p className="data-note">
+                  {target.cell.area} · {target.cell.sensorM === null ? "600m 안에 소음 센서 없음" : `가까운 소음 센서 ${Math.round(target.cell.sensorM)}m`}
+                  {" · "}신뢰도 {confidenceLabel(target.cell.confidence.sound)}
+                </p>
+                <dl className="levels">
+                  {SENSES.map((s) => (
+                    <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
                   ))}
                 </dl>
-                <div className="links">
-                  {target.website && <a href={target.website} target="_blank" rel="noreferrer">웹사이트</a>}
-                  <a href={`https://map.naver.com/p/search/${encodeURIComponent(target.title)}`} target="_blank" rel="noreferrer">네이버 지도</a>
-                  <a href={`https://map.kakao.com/?q=${encodeURIComponent(target.title)}`} target="_blank" rel="noreferrer">카카오맵</a>
-                </div>
-                <p className="hint">OpenStreetMap 기준이며 실제와 다를 수 있어요.</p>
-              </div>
-              {isHome && (
-                <div className="opening-slot">
-                  <div className="opening" aria-hidden="true" />
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="sheet">
-            <div className="sheet-grid">
-              <div className="module score-module">
-                <p className="where">{target.title}</p>
-                {!isHome && <p className="where">{target.line} · {hourLabel(hour)}</p>}
-                <p className="score">{score ?? "-"}</p>
-                <p className="verdict" style={{ color: scoreGrade.color }}>{label}</p>
-              </div>
-
-              <div className="module tune-module">
-                <h2>내 감각</h2>
-                {sliders}
-              </div>
-
-              <div className="opening-slot">
-                <div className="opening" aria-hidden="true" />
-              </div>
-
-              <div className="module story">
-                <div className="story-main">
-                  <h2>{isHome ? "이 건물의 밤" : "이 장소의 지금"}</h2>
-                  <p className="note">
-                    {isHome ? sleepBlocker(target.cell.burdens.night, sensitivity) : explain(burden!, sensitivity, score ?? 0)}
-                  </p>
-                  {isHome && detail?.notes?.map((note) => <p className="data-note" key={note}>{note}</p>)}
-                  <p className="data-note">
-                    {target.cell.area} · {target.cell.sensorM === null ? "600m 안에 소음 센서 없음" : `가까운 소음 센서 ${Math.round(target.cell.sensorM)}m`}
-                    {" · "}신뢰도 {confidenceLabel(target.cell.confidence.sound)}
-                  </p>
-                  <dl className="levels">
-                    {SENSES.map((s) => (
-                      <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
-                    ))}
-                  </dl>
-                </div>
-                {isHome && (
-                  <div className="checks">
-                    <h2>집 보러 갈 때</h2>
-                    {visitChecklist(target.cell.burdens.night, sensitivity).map((item) => {
-                      const key = `${home.id}:${item}`;
-                      return (
-                        <label key={item}>
-                          <input type="checkbox" checked={checked.includes(key)} onChange={() => toggleCheck(key)} />
-                          <span>{item}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="module side">
-                {isHome ? (
-                  <>
-                    <div className="row">
-                      <h2>집 후보</h2>
-                      <button onClick={() => toggleSaved(home)}>{isSaved ? "빼기" : "담기"}</button>
-                    </div>
-                    {ranked.length > 0 ? (
-                      <ol className="candidates" aria-label="집 후보 비교">
-                        {ranked.map(({ item, score: total, night, dawn }) => (
-                          <li key={item.id}>
-                            <button onClick={() => setHome(item)}>
-                              <span>{item.name ?? item.type}<small>밤 {night} · 새벽 {dawn}</small></span>
-                              <strong>{total ?? "-"}</strong>
-                            </button>
-                          </li>
-                        ))}
-                      </ol>
-                    ) : (
-                      <p className="hint">건물을 고르고 담아 보세요.</p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <h2>시간별 쉼 지수</h2>
-                    <div className="hours" role="group" aria-label="시간별 쉼 지수">
-                      {HOUR_MARKS.map((mark) => {
-                        const value = restScore(burdenAt(target.cell.burdens, mark), sensitivity);
-                        return (
-                          <button key={mark} className={mark === hour ? "on" : ""} aria-pressed={mark === hour} onClick={() => setHour(mark)}>
-                            <span>{mark}시</span>
-                            <i><u style={{ width: `${Math.max(value, 4)}%` }} /></i>
-                            <b>{value}</b>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </section>
-          </div>
-        </main>
+              </>
+            }
+            extra={
+              isHome && (
+                <VisitChecklist
+                  homeId={home.id}
+                  items={visitChecklist(target.cell.burdens.night, sensitivity)}
+                  checked={checked}
+                  onToggle={toggleCheck}
+                />
+              )
+            }
+            side={
+              isHome ? (
+                <HomeCandidates ranked={ranked} isSaved={isSaved} onToggleSaved={() => toggleSaved(home)} onSelect={setHome} />
+              ) : (
+                <RestHours
+                  hour={hour}
+                  scoreAt={(mark) => restScore(burdenAt(target.cell.burdens, mark), sensitivity)}
+                  onHour={setHour}
+                />
+              )
+            }
+          />
+        </GlassSheets>
       )}
     </>
   );
