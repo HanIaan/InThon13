@@ -93,6 +93,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .legend.rest i { background: linear-gradient(90deg, #d0d0cc, #a5d7af, #2da069); }
 .legend p { display: flex; justify-content: space-between; margin-top: 6px; }
 
+.sheet-dock { display: none; }
 .dock {
   position: fixed;
   z-index: 35;
@@ -110,6 +111,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .slots button.on { background: var(--ink); color: #fff; }
 .basis { padding: 7px 14px; font-size: 13px; font-weight: 600; }
 .time { box-sizing: border-box; display: flex; align-items: center; gap: 14px; width: 100%; height: 52px; padding: 0 18px; border-radius: 22px; }
+.time-flat { display: none; height: 44px; margin-top: 14px; padding: 0; }
 .time-now { flex: none; display: grid; min-width: 62px; line-height: 1.2; }
 .time-now b { font-size: 15px; font-weight: 700; }
 .time-now small { color: var(--muted); font-size: 12px; font-weight: 600; }
@@ -418,8 +420,11 @@ html.locked { overflow: hidden; }
   .page.rest .story, .page.rest .side { display: contents; }
   .page.rest .place-head { grid-area: head; pointer-events: auto; }
   .page.rest .score-block { grid-area: score; pointer-events: auto; }
-  .page.rest .slot.only-wide { grid-area: hours; align-self: start; pointer-events: auto; }
-  .page.rest .now-side { grid-area: now; pointer-events: auto; }
+  .page.rest .slot.only-wide { grid-area: now; pointer-events: auto; }
+  .page.rest .now-side { grid-area: hours; align-self: start; pointer-events: auto; }
+  /* 3칸 화면에서는 시간 바를 지도 위에 띄우지 않고 지금 감각 아래에 둔다. */
+  .page.rest .now-side .time-flat { display: flex; }
+  .dock.on-opening .time { display: none; }
   .page.rest .side .sense-tune { grid-area: tune; align-self: end; pointer-events: auto; }
 }
 
@@ -434,18 +439,21 @@ html.locked { overflow: hidden; }
     grid-template-columns: 300px minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas: "story opening" "side opening";
-    /* 내용이 다 들어가는 선에서 화면 높이가 남는 만큼 간격을 넓힌다. */
-    --stack-gap: clamp(10px, calc(10px + (100vh / var(--ui) - 830px) / 5), 30px);
+    /* 묶음 안은 붙이고 묶음 사이는 이만큼 띄워 어디서 나뉘는지 보이게 한다. */
+    --stack-gap: 30px;
     gap: var(--stack-gap) 24px;
     padding: 56px 0 14px 32px;
   }
   .page.rest .story, .page.rest .side { gap: var(--stack-gap); }
-  .page.rest .place-head { gap: 6px; }
+  .page.rest .place-head { gap: 4px; }
   .page.rest .place-head h1 { font-size: 26px; }
+  .page.rest .facts { gap: 1px; }
+  .page.rest .report-card h2 { margin-bottom: 4px; }
+  .page.rest .report-card > h2 + .levels { margin-top: 2px; }
   .page.rest .score-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 0; }
   .page.rest .score-block .where { flex-basis: 100%; }
   .page.rest .score { margin: 0; font-size: 56px; }
-  .page.rest .sense-tune { gap: calc(var(--stack-gap) / 3); }
+  .page.rest .sense-tune { gap: 4px; }
   .page.rest .sense-tune .range input { height: 18px; }
   .page.rest .story, .page.rest .side { min-height: 0; overflow: hidden auto; }
   /* 스위치와 검색바가 지도 창 경계에 걸치지 않게 창 가운데로 옮긴다. 178px은 왼쪽 칸 폭의 절반이다. */
@@ -458,8 +466,8 @@ html.locked { overflow: hidden; }
 
 @media (max-aspect-ratio: 1/1) {
   .switch { top: 12px; }
-  /* 점수 탭 80+14, 검색창 54, 시간 바 52, 간격 10씩 */
-  .spots { top: auto; right: auto; left: 50%; bottom: 220px; width: calc(100vw / var(--ui) - 24px); max-width: 480px; transform: translateX(-50%); padding: 8px; }
+  /* 점수 탭 62+14, 검색창 54, 시간 바 52, 간격 10씩 */
+  .spots { top: auto; right: auto; left: 50%; bottom: 202px; width: calc(100vw / var(--ui) - 24px); max-width: 480px; transform: translateX(-50%); padding: 8px; }
   .spots { translate: none !important; }
   .spots.closed { transform: translateX(-50%); }
   .spots-toggle { display: none; }
@@ -475,8 +483,11 @@ html.locked { overflow: hidden; }
   .tune:not(.open) { width: auto; }
   .tune:not(.open) .tune-head { gap: 12px; }
   .range { margin-top: 10px; }
-  .peek { right: max(12px, calc(50vw / var(--ui) - 240px)); max-width: min(480px, calc(100vw / var(--ui) - 24px)); }
-  .dock { left: 50%; right: auto; bottom: 94px; width: calc(100vw / var(--ui) - 24px); max-width: 480px; min-width: 0; transform: translateX(-50%); }
+  .peek { top: -62px; right: max(12px, calc(50vw / var(--ui) - 240px)); gap: 10px; max-width: min(480px, calc(100vw / var(--ui) - 24px)); height: 62px; padding: 0 18px; }
+  .peek span { font-size: 15px; }
+  .peek strong { font-size: 38px; }
+  .peek em { font-size: 16px; }
+  .dock { left: 50%; right: auto; bottom: 76px; width: calc(100vw / var(--ui) - 24px); max-width: 480px; min-width: 0; transform: translateX(-50%); }
   .search input { height: 40px; }
   .leaflet-top.leaflet-right { display: none; }
   .dock.up { display: none; }
@@ -525,6 +536,19 @@ html.locked { overflow: hidden; }
   .page.rest .score-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
   .page.rest .score-block .where { flex-basis: 100%; }
   .page.rest .score-block .verdict { font-size: 15px; }
+  /* 점수 오른쪽 빈자리에 작은 검색창과 시간 바를 둔다. */
+  .page.rest .sheet-dock { position: relative; z-index: 31; display: grid; grid-area: score; grid-template-columns: minmax(0, 1fr); align-self: end; justify-self: end; gap: 6px; width: 172px; pointer-events: auto; }
+  .sheet-dock .search { order: -1; gap: 4px; height: 36px; padding: 3px; }
+  .sheet-dock .search input { min-width: 0; height: 30px; padding: 0 0 0 10px; font-size: 13px; }
+  .sheet-dock .search-go { height: 30px; padding: 0 10px; font-size: 12px; }
+  .sheet-dock .time { gap: 8px; height: 34px; padding: 0 10px; border-radius: 14px; }
+  .sheet-dock .time-now { min-width: 0; }
+  .sheet-dock .time-now b { font-size: 12px; white-space: nowrap; }
+  .sheet-dock .time-now small { display: none; }
+  .sheet-dock .time-rail { height: 24px; }
+  .sheet-dock .time-sky { top: 6px; height: 12px; }
+  .sheet-dock .time-mark { top: 2px; width: 20px; height: 20px; margin-left: -10px; border-width: 2px; }
+  .sheet-dock .search-list { top: 42px; right: 0; bottom: auto; left: auto; width: min(300px, calc(100vw / var(--ui) - 52px)); max-height: 260px; }
   .page.home .side { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
   .side .side-head { grid-column: 1 / -1; }
   .dv-bar { flex-wrap: wrap; gap: 4px 8px; border-radius: 18px; }

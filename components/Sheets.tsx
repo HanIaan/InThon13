@@ -50,6 +50,7 @@ export function MainSheet({
   up,
   emptyValues,
   mapTools,
+  tools,
   left,
   side,
 }: {
@@ -59,6 +60,7 @@ export function MainSheet({
   up: boolean;
   emptyValues: string[];
   mapTools: ReactNode;
+  tools?: ReactNode;
   left: ReactNode;
   side: ReactNode;
 }) {
@@ -101,6 +103,7 @@ export function MainSheet({
           </div>
           {left}
         </div>
+        {tools}
         <div className="opening-slot">
           <div className="opening" aria-hidden="true" />
           <div className="map-tools">{mapTools}</div>

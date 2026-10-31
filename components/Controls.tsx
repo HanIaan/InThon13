@@ -162,6 +162,31 @@ export function TuneCard({
   );
 }
 
+// flat은 유리 없이 정보창 안에 놓는 모양이다.
+export function TimeBar({ hour, onHour, flat }: { hour: number; onHour: (hour: number) => void; flat?: boolean }) {
+  return (
+    <label className={`time ${flat ? "time-flat" : "glass"}`}>
+      <span className="time-now">
+        <b>{hourLabel(hour)}</b>
+        <small>{SLOTS.find((s) => s.id === slotOf(hour))!.label}</small>
+      </span>
+      <span className="time-rail">
+        <i className="time-sky" aria-hidden="true" />
+        <i className={`time-mark ${hour >= 7 && hour < 18 ? "sun" : "moon"}`} style={{ left: `${(hour / 23) * 100}%` }} aria-hidden="true" />
+        <input
+          type="range"
+          min={0}
+          max={23}
+          step={1}
+          value={hour}
+          onChange={(e) => onHour(Number(e.target.value))}
+          aria-label="시간 선택"
+        />
+      </span>
+    </label>
+  );
+}
+
 export function Dock({
   isHome,
   showControls,
@@ -172,6 +197,7 @@ export function Dock({
   onPick,
   onMiss,
   near,
+  compact,
 }: {
   isHome: boolean;
   showControls: boolean;
@@ -183,6 +209,8 @@ export function Dock({
   onMiss: () => void;
   // 지금 보고 있는 위치. 같은 이름이면 가까운 곳을 앞에 둔다.
   near?: { lat: number; lng: number };
+  // 휴대폰 정보창 안에 작게 넣을 때 쓴다.
+  compact?: boolean;
 }) {
   const [results, setResults] = useState<SearchPlace[]>([]);
 
@@ -211,29 +239,11 @@ export function Dock({
   };
 
   return (
-    <div className={`dock ${showControls ? "" : `up ${isHome ? "" : "on-opening"}`}`}>
+    <div className={compact ? "sheet-dock" : `dock ${showControls ? "" : `up ${isHome ? "" : "on-opening"}`}`}>
       {isHome ? (
         showControls && <p className="slots basis glass">건물을 눌러 선택</p>
       ) : (
-        <label className="time glass">
-          <span className="time-now">
-            <b>{hourLabel(hour)}</b>
-            <small>{SLOTS.find((s) => s.id === slotOf(hour))!.label}</small>
-          </span>
-          <span className="time-rail">
-            <i className="time-sky" aria-hidden="true" />
-            <i className={`time-mark ${hour >= 7 && hour < 18 ? "sun" : "moon"}`} style={{ left: `${(hour / 23) * 100}%` }} aria-hidden="true" />
-            <input
-              type="range"
-              min={0}
-              max={23}
-              step={1}
-              value={hour}
-              onChange={(e) => onHour(Number(e.target.value))}
-              aria-label="시간 선택"
-            />
-          </span>
-        </label>
+        <TimeBar hour={hour} onHour={onHour} />
       )}
       {/* 목록의 유리 흐림이 검색창 안에 갇히지 않게 검색창 밖에 둔다. */}
       {results.length > 0 && (

@@ -183,7 +183,9 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
   };
 
   const centerOn = (target: Point, smooth = false) => {
-    const { kakao, map } = kit.current!;
+    // 지도가 사라진 뒤에 늦게 온 이벤트는 무시한다.
+    if (!kit.current || !host.current) return;
+    const { kakao, map } = kit.current;
     const spot = focusSpot();
     const projection = map.getProjection();
     const [width, height] = [host.current!.clientWidth / 2, host.current!.clientHeight / 2];
@@ -308,7 +310,7 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
         centerPin.current?.classList.add("up");
       });
       kakao.maps.event.addListener(map, "idle", () => {
-        if (!dragging) return;
+        if (!dragging || !kit.current || !host.current) return;
         dragging = false;
         centerPin.current?.classList.remove("up");
         const { x, y } = focusSpot();
@@ -409,6 +411,7 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
         window.removeEventListener("gesturechange", onGesture);
       };
       observer = new ResizeObserver(() => {
+        if (!kit.current || !host.current) return;
         map.relayout();
         standPin();
         if (!latest.current.homes && latest.current.focusPoint) centerOn(latest.current.focusPoint);

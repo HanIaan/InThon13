@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Dock, LocateButton, SensitivitySliders, TopSwitch, TuneCard, ZoomButtons } from "@/components/Controls";
+import { Dock, LocateButton, SensitivitySliders, TimeBar, TopSwitch, TuneCard, ZoomButtons } from "@/components/Controls";
 import { DirectionDial, FloorInput, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
 import { GlassSheets, MainSheet } from "@/components/Sheets";
@@ -50,7 +50,6 @@ import {
   hourLabel,
   level,
   restScore,
-  SENSE_LABEL,
   slotOf,
   SLOTS,
   type Sense,
@@ -85,6 +84,7 @@ const MAX_UI_SCALE = 1.6;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
 const DEFAULT_FLOOR = 3;
+const NOW_LABEL: Record<Sense, string> = { sound: "소음", light: "빛공해", crowd: "혼잡도" };
 const LOCATE_TIMEOUT_MS = 10000;
 const LOCATE_MAX_AGE_MS = 60000;
 
@@ -99,6 +99,7 @@ export default function Home() {
   const [buildings, setBuildings] = useState<Building[] | null>(null);
   const [streets, setStreets] = useState<Street[]>([]);
   const [query, setQuery] = useState("");
+  const [sheetQuery, setSheetQuery] = useState("");
   const [tab, setTab] = useState<"rest" | "home">("rest");
   const [tuneOpen, setTuneOpen] = useState(true);
   const [up, setUp] = useState(false);
@@ -541,9 +542,10 @@ export default function Home() {
       <h2>지금 감각</h2>
       <dl className="levels">
         {SENSES.map((s) => (
-          <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
+          <div key={s}><dt>{NOW_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
         ))}
       </dl>
+      <TimeBar hour={hour} onHour={setHour} flat />
     </div>
   );
   const sliders = <SensitivitySliders value={sensitivity} isHome={isHome} lightOff={lightOff} onChange={setSensitivity} />;
@@ -624,6 +626,7 @@ export default function Home() {
                 <LocateButton busy={locating} onClick={locate} />
               </>
             }
+            tools={!isHome && <Dock isHome={false} showControls hour={hour} query={sheetQuery} onHour={setHour} onQuery={setSheetQuery} onPick={pick} onMiss={() => setToast("검색 결과가 없어요")} near={point} compact />}
             left={
               <>
                 {isHome && (
