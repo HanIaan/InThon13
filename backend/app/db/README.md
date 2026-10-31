@@ -48,8 +48,10 @@ DATA_MODE=live ../.venv/bin/uvicorn app.main:app
 ```
 
 The first migration requires permission to install PostGIS. Migrations have a
-checksum history and an advisory lock. SQL supports PostGIS installed in either
-`public` or Supabase's `extensions` schema. All engine tables enable RLS and revoke
+checksum history and an advisory lock. PostGIS must be installed in Supabase's `extensions` schema. Migration geometry
+types and PostGIS functions are explicitly qualified and do not depend on
+search_path. An existing installation in another schema must be reviewed by the
+coordinator before migration; this script does not relocate existing extensions. All engine tables enable RLS and revoke
 PUBLIC/anon/authenticated access; no public policies are created. The service_role
 gets table privileges when that role exists. Plain direct connections must have
 ownership/BYPASSRLS privileges; arbitrary DB users do not bypass RLS.

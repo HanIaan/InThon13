@@ -26,6 +26,9 @@ def test_postgis_roundtrip_rls_and_idempotent_migration(tmp_path):
     try:
         apply_migrations(conn)
         assert apply_migrations(conn) == []
+        conn.execute("SET LOCAL search_path TO pg_catalog")
+        assert conn.execute("SELECT NULL::extensions.geometry(Point,4326) AS geom").fetchone()["geom"] is None
+        conn.execute("SET LOCAL search_path TO public, extensions")
         publish_on_connection(conn, snapshot, data)
         loaded = read_on_connection(conn)
         expected = {(c.grid_id, c.time_slot): CELL_ADAPTER.dump_python(c, mode="json") for c in snapshot.cells}

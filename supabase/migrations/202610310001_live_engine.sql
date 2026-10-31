@@ -1,12 +1,13 @@
 -- Engine-owned tables. Apply with python -m app.db.migrate using a privileged
 -- direct database connection. Supabase REST/anon clients cannot read these data.
-CREATE EXTENSION IF NOT EXISTS postgis;
-SET LOCAL search_path TO public, extensions;
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA extensions;
+-- Explicit type/function schemas: migration does not depend on search_path.
 
 CREATE TABLE public.sensors (
     sensor_id text PRIMARY KEY,
     source text NOT NULL CHECK (source = 'sdot'),
-    geom geometry(Point, 4326) NOT NULL,
+    geom extensions.geometry(Point, 4326) NOT NULL,
     name text, gu_name text, dong_code text, installed_at timestamptz,
     location_status text NOT NULL CHECK (location_status IN ('observed', 'estimated'))
 );
@@ -21,8 +22,8 @@ CREATE TABLE public.sdot_observations (
 CREATE INDEX sdot_observations_time_idx ON public.sdot_observations (observed_at);
 CREATE TABLE public.admin_dong (
     dong_code text PRIMARY KEY, dong_name text, gu_name text,
-    geom geometry(MultiPolygon, 4326) NOT NULL,
-    CHECK (ST_IsValid(geom))
+    geom extensions.geometry(MultiPolygon, 4326) NOT NULL,
+    CHECK (extensions.ST_IsValid(geom))
 );
 CREATE INDEX admin_dong_geom_gist ON public.admin_dong USING gist (geom);
 CREATE TABLE public.living_population (
@@ -36,7 +37,7 @@ CREATE INDEX living_population_time_idx ON public.living_population (stat_date, 
 CREATE TABLE public.night_lights (
     pixel_id text NOT NULL, product text NOT NULL,
     period_start date NOT NULL, period_end date NOT NULL,
-    geom geometry(Polygon, 4326) NOT NULL,
+    geom extensions.geometry(Polygon, 4326) NOT NULL,
     pixel_size_deg double precision NOT NULL CHECK (pixel_size_deg > 0),
     radiance double precision, quality_flag integer, cloud_flag integer,
     PRIMARY KEY (pixel_id, product, period_start, period_end),
@@ -46,8 +47,8 @@ CREATE INDEX night_lights_geom_gist ON public.night_lights USING gist (geom);
 CREATE INDEX night_lights_period_idx ON public.night_lights (period_end);
 CREATE TABLE public.grid_cells (
     grid_id text PRIMARY KEY, ix integer NOT NULL, iy integer NOT NULL,
-    geom geometry(Polygon, 4326) NOT NULL,
-    geom_5179 geometry(Polygon, 5179) NOT NULL,
+    geom extensions.geometry(Polygon, 4326) NOT NULL,
+    geom_5179 extensions.geometry(Polygon, 5179) NOT NULL,
     UNIQUE (ix, iy)
 );
 CREATE INDEX grid_cells_geom_gist ON public.grid_cells USING gist (geom);
