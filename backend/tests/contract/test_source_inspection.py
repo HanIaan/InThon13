@@ -1,51 +1,78 @@
 """Contract inspection consistency tests (Part B).
 
 Verifies that source, raw_unit, method, and status across indicators do not contradict each other.
-Identifies discrepancies in existing implementation and marks them with xfail.
+Light policy follows docs/data-dictionary.md 1장 (2026-10-31): score from NASA VNP46A3 only.
 """
 from __future__ import annotations
 
 import pytest
 
 
-def test_inspect_indicator_unit_and_method_consistency(client):
-    """Units and methods must match the physical indicator specifications."""
-    res = client.get(
-        "/api/v1/location/inspect",
-        params={"lat": 37.5665, "lng": 126.9780, "time_slot": "night"},
-    )
-    assert res.status_code == 200
-    inds = res.json()["indicators"]
+NIGHT_SLOTS = ("evening", "night", "dawn")
+CITY_HALL = {"lat": 37.5665, "lng": 126.9780}
 
-    # 1. Noise: unit dB, method mock
+
+def _inspect(client, time_slot: str) -> dict:
+    res = client.get("/api/v1/location/inspect", params={**CITY_HALL, "time_slot": time_slot})
+    assert res.status_code == 200
+    return res.json()
+
+
+def _assert_light_policy(light: dict) -> None:
+    """Light policy (data-dictionary 1장): score from NASA VNP46A3 only, S-DoT lux as evidence only."""
+    assert light["source"] == "nasa_black_marble"
+    assert light["raw_unit"] == "nW/cm2/sr"
+    if light["status"] == "mock":
+        assert light["method"] == "mock"
+    elif light["status"] == "missing":
+        # No usable NASA pixel -> null, never replaced by S-DoT lux.
+        assert light["raw_value"] is None
+    else:
+        # ~463 m pixel over a 200 m cell is never a direct 200 m observation.
+        assert light["status"] == "estimated"
+        assert light["method"] == "pixel_overlay"
+
+    for sensor in light.get("nearby_sensors") or []:
+        assert sensor["source"] == "sdot"
+        assert sensor["raw_unit"] == "lux"
+
+
+@pytest.mark.parametrize("time_slot", NIGHT_SLOTS)
+def test_inspect_indicator_unit_and_method_consistency(client, time_slot):
+    """Units, sources and methods must match the physical indicator specifications."""
+    body = _inspect(client, time_slot)
+    inds = body["indicators"]
+
+    # 1. Noise: S-DoT, dB
     noise = inds["noise"]
     assert noise["raw_unit"] == "dB"
-    assert noise["status"] == "mock"
-    assert noise["method"] == "mock"
     assert noise["source"] == "sdot"
-
-    # 2. Light at night: unit lux (S-DoT) or nW/cm2/sr (NASA)
-    light = inds["light"]
-    assert light["raw_unit"] in ("lux", "nW/cm2/sr")
-    assert light["status"] == "mock"
-    assert light["method"] == "mock"
-    assert light["source"] == "sdot"
-
-    # 3. Crowd: unit persons/km2
-    crowd = inds["crowd"]
-    assert crowd["raw_unit"] == "persons/km2"
-    assert crowd["status"] == "mock"
-    assert crowd["method"] == "mock"
-    assert crowd["source"] == "living_population"
-
-    # Check evidence sensors consistency
-    for sensor in noise.get("nearby_sensors", []):
+    if noise["status"] == "mock":
+        assert noise["method"] == "mock"
+    for sensor in noise.get("nearby_sensors") or []:
         assert sensor["raw_unit"] == "dB"
         assert sensor["source"] == "sdot"
 
-    for sensor in light.get("nearby_sensors", []):
-        assert sensor["raw_unit"] == light["raw_unit"]
-        assert sensor["source"] == "sdot"
+    # 2. Light after dark: NASA radiance; S-DoT lux only as nearby evidence
+    _assert_light_policy(inds["light"])
+
+    # 3. Crowd: living population density
+    crowd = inds["crowd"]
+    assert crowd["raw_unit"] == "persons/km2"
+    assert crowd["source"] == "living_population"
+    if crowd["status"] == "mock":
+        assert crowd["method"] == "mock"
+
+
+def test_light_identical_across_night_slots(client):
+    """VNP46A3 is monthly: evening/night/dawn must carry the same light raw_value and period."""
+    lights = {slot: _inspect(client, slot)["indicators"]["light"] for slot in NIGHT_SLOTS}
+    values = {slot: light["raw_value"] for slot, light in lights.items()}
+    assert len(set(values.values())) == 1, f"light raw_value differs across night slots: {values}"
+    statuses = {light["status"] for light in lights.values()}
+    assert len(statuses) == 1, f"light status differs across night slots: {statuses}"
+    periods = {(light.get("period_start"), light.get("period_end")) for light in lights.values()}
+    assert len(periods) == 1, f"light period differs across night slots: {periods}"
 
 
 def test_daytime_not_applicable_light_consistency(client):
