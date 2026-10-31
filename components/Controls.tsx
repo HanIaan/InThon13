@@ -12,6 +12,19 @@ const HOME_SLIDERS: { id: keyof Sensitivity; label: string }[] = [
 ];
 const SEARCH_DELAY_MS = 250;
 
+// 검색어와 같은 글자를 이름 안에서 강조한다.
+function highlight(name: string, query: string) {
+  const at = query ? name.indexOf(query) : -1;
+  if (at < 0) return name;
+  return (
+    <>
+      {name.slice(0, at)}
+      <mark>{name.slice(at, at + query.length)}</mark>
+      {name.slice(at + query.length)}
+    </>
+  );
+}
+
 export function SensitivitySliders({
   value,
   isHome,
@@ -183,6 +196,24 @@ export function Dock({
           </span>
         </label>
       ))}
+      {/* 목록의 유리 흐림이 검색창 안에 갇히지 않게 검색창 밖에 둔다. */}
+      {results.length > 0 && (
+        <ul className="search-list">
+          {results.map((place) => (
+            <li key={`${place.name}${place.lat}`}>
+              <button type="button" onClick={() => choose(place)}>
+                <i className="search-pin" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 1.5a4.8 4.8 0 0 0-4.8 4.8C3.2 9.9 8 14.5 8 14.5s4.8-4.6 4.8-8.2A4.8 4.8 0 0 0 8 1.5Zm0 6.6a1.8 1.8 0 1 1 0-3.6 1.8 1.8 0 0 1 0 3.6Z" fill="currentColor" /></svg>
+                </i>
+                <span>
+                  <b>{highlight(place.name, query.trim())}</b>
+                  {place.detail && <small>{place.detail}</small>}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <form
         className="search glass"
         onSubmit={async (e) => {
@@ -193,25 +224,13 @@ export function Dock({
           else if (query.trim()) onMiss();
         }}
       >
-        {results.length > 0 && (
-          <ul className="search-list glass">
-            {results.map((place) => (
-              <li key={`${place.name}${place.lat}`}>
-                <button type="button" onClick={() => choose(place)}>
-                  <b>{place.name}</b>
-                  {place.detail && <small>{place.detail}</small>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
         <input
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           placeholder="주소나 장소 검색"
           aria-label="주소나 장소 검색"
         />
-        <button type="submit">검색</button>
+        <button type="submit" className="search-go">검색</button>
       </form>
     </div>
   );
