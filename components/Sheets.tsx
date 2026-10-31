@@ -51,6 +51,7 @@ export function MainSheet({
   emptyValues,
   mapTools,
   tools,
+  legend,
   left,
   side,
 }: {
@@ -61,6 +62,8 @@ export function MainSheet({
   emptyValues: string[];
   mapTools: ReactNode;
   tools?: ReactNode;
+  // 점수 탭 위에 색 기준을 붙인다.
+  legend?: [string, string];
   left: ReactNode;
   side: ReactNode;
 }) {
@@ -68,7 +71,14 @@ export function MainSheet({
   const facts = target.facts.filter((fact) => fact.value);
   return (
     <section className="sheet">
-      <button className={`peek ${up ? "hidden" : ""}`} onClick={open}>
+      <button className={`peek ${up ? "hidden" : ""} ${legend ? "with-legend" : ""}`} onClick={open}>
+        {legend && (
+          <b className="peek-legend">
+            <i />
+            <small>{legend[0]}</small>
+            <small>{legend[1]}</small>
+          </b>
+        )}
         <span>{target.title}</span>
         <strong>{score.value ?? "-"}</strong>
         <em style={{ color: score.color }}>{score.label}</em>

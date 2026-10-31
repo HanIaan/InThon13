@@ -56,6 +56,7 @@ export function SensitivitySliders({
   return (
     <>
       {ranges}
+      <p className="range-scale"><span>둔감</span><span>예민</span></p>
       {allOff && <p className="range-hint">감각을 하나 이상 켜야 점수를 매길 수 있어요.</p>}
     </>
   );
@@ -152,10 +153,12 @@ export function TuneCard({
       {open && (
         <>
           {children}
-          <div className={`legend ${isHome ? "" : "rest"}`}>
-            <i />
-            <p><span>{isHome ? "잠자리 주의" : "쉬기 어려움"}</span><span>{isHome ? "잠들기 좋음" : "쉬기 좋음"}</span></p>
-          </div>
+          {isHome && (
+            <div className="legend">
+              <i />
+              <p><span>잠자리 주의</span><span>잠들기 좋음</span></p>
+            </div>
+          )}
         </>
       )}
     </aside>
@@ -239,7 +242,7 @@ export function Dock({
   };
 
   return (
-    <div className={compact ? "sheet-dock" : `dock ${showControls ? "" : `up ${isHome ? "" : "on-opening"}`}`}>
+    <div className={compact ? "sheet-dock" : `dock ${isHome ? "" : "rest"} ${showControls ? "" : `up ${isHome ? "" : "on-opening"}`}`}>
       {isHome ? (
         showControls && <p className="slots basis glass">건물을 눌러 선택</p>
       ) : (

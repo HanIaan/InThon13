@@ -381,8 +381,7 @@ export default function Home() {
 
   function chooseOnMap(next: { lat: number; lng: number }) {
     if (isHome) {
-      if (mapView && mapView.zoom < HOME_ZOOM) setToast("지도를 확대해 건물을 골라 주세요");
-      else pick(next);
+      pick(next);
       return;
     }
     if (!nearestToPoint(overview, next.lat, next.lng, 0.6)) {
@@ -443,7 +442,6 @@ export default function Home() {
           cell: active.cell,
           facts: [
             { label: "주소", value: active.spot.address ?? noInfo },
-            { label: "운영 시간", value: active.spot.hours ?? noInfo },
           ],
           website: active.spot.website,
           lat: active.spot.lat,
@@ -456,7 +454,6 @@ export default function Home() {
             cell: pointCell,
             facts: [
               { label: "주소", value: found && !found.address ? noInfo : foundAddress },
-              { label: "운영 시간", value: noInfo },
             ],
             website: undefined,
             lat: point.lat,
@@ -626,6 +623,7 @@ export default function Home() {
                 <LocateButton busy={locating} onClick={locate} />
               </>
             }
+            legend={isHome ? undefined : ["쉬기 어려움", "쉬기 좋음"]}
             tools={!isHome && <Dock isHome={false} showControls hour={hour} query={sheetQuery} onHour={setHour} onQuery={setSheetQuery} onPick={pick} onMiss={() => setToast("검색 결과가 없어요")} near={point} compact />}
             left={
               <>

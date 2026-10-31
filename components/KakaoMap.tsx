@@ -140,7 +140,7 @@ export default function KakaoMap(props: Props) {
   return failed ? <FallbackMap {...props} /> : <KakaoLayer {...props} onFail={() => setFailed(true)} />;
 }
 
-function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, myPoint, sheetUp, zoomRef, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
+function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, sheetUp, zoomRef, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const kit = useRef<{ kakao: any; map: any; heat: any; buildings: any } | null>(null);
   const pins = useRef<any[]>([]);
@@ -149,8 +149,8 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
   const zoomControl = useRef<any>(null);
   const outline = useRef<any>(null);
   const placed = useRef("");
-  const latest = useRef({ onPoint, onHome, onView, onSpot, homes, focusPoint });
-  latest.current = { onPoint, onHome, onView, onSpot, homes, focusPoint };
+  const latest = useRef({ onPoint, onHome, onView, onSpot, homes, activeHome, focusPoint });
+  latest.current = { onPoint, onHome, onView, onSpot, homes, activeHome, focusPoint };
   const hover = useRef<any>(null);
   const view = useRef<MapView | null>(null);
   const redraw = useRef<() => void>(() => {});
@@ -210,13 +210,13 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
     const { map } = current;
     const key = `${focusPoint.lat},${focusPoint.lng},${Boolean(homes)}`;
     if (placed.current === key) return;
-    const first = !placed.current.endsWith("false");
+    const first = !placed.current;
     placed.current = key;
     const level = homes ? HOME_LEVEL : REST_LEVEL;
     const zoomed = map.getLevel() > level;
     if (zoomed) map.setLevel(level);
-    // 휴식에서는 핀이 제자리에 있고 지도가 밀려 오게 한다.
-    centerOn(focusPoint, !homes && !first && !zoomed);
+    // 핀은 제자리에 있고 지도가 밀려 오게 한다.
+    centerOn(focusPoint, !first && !zoomed);
   };
 
   const pin = () => {
@@ -302,10 +302,9 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
         latest.current.onView(view.current);
       };
       kakao.maps.event.addListener(map, "idle", send);
-      // 휴식에서는 지도를 끄는 동안 핀을 띄우고, 지도가 멈추면 핀 끝이 가리키는 곳을 고른다.
+      // 지도를 끄는 동안 핀을 띄우고, 지도가 멈추면 핀 끝이 가리키는 곳을 고른다.
       let dragging = false;
       kakao.maps.event.addListener(map, "dragstart", () => {
-        if (latest.current.homes) return;
         dragging = true;
         centerPin.current?.classList.add("up");
       });
@@ -316,15 +315,27 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
         const { x, y } = focusSpot();
         const spot = map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(x, y));
         const next = { lat: spot.getLat(), lng: spot.getLng() };
+        const { homes: list, activeHome: chosen, onHome: pickHome, onPoint: pickPoint, focusPoint: focus } = latest.current;
+        if (list) {
+          // 건물은 핀 아래 건물로 맞춘다. 같은 건물이면 다시 고를 일이 없어 지도만 되돌린다.
+          const found = list.length ? homeNear(list, next.lat, next.lng, reach()) : null;
+          if (found && found.id === chosen?.id && focus) centerOn(focus, true);
+          else if (found && pickHome) pickHome(found);
+          else {
+            placed.current = "다시";
+            pickPoint(next);
+          }
+          return;
+        }
         placed.current = `${next.lat},${next.lng},false`;
-        if (latest.current.onPoint(next) === false && latest.current.focusPoint) {
-          placed.current = `${latest.current.focusPoint.lat},${latest.current.focusPoint.lng},false`;
-          centerOn(latest.current.focusPoint, true);
+        if (pickPoint(next) === false && focus) {
+          placed.current = `${focus.lat},${focus.lng},false`;
+          centerOn(focus, true);
         }
       });
       // 지도 버튼은 화면 가운데를 기준으로 확대하므로 대상을 핀 자리로 되돌린다.
       kakao.maps.event.addListener(map, "zoom_changed", () => {
-        if (!latest.current.homes && latest.current.focusPoint && !dragging) centerOn(latest.current.focusPoint);
+        if (latest.current.focusPoint && !dragging) centerOn(latest.current.focusPoint);
       });
       const reach = () => {
         const projection = map.getProjection();
@@ -353,12 +364,7 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
         map.setCursor(found ? "pointer" : "");
       });
       kakao.maps.event.addListener(map, "click", (e: any) => {
-        const { homes: list, onHome: pickHome, onPoint: pickPoint } = latest.current;
-        // 주거 화면에서 건물이 작게 보이면 먼저 그 자리를 확대한다.
-        if (list && map.getLevel() > HOME_LEVEL) {
-          map.setLevel(HOME_LEVEL, { anchor: e.latLng });
-          return;
-        }
+        const { onHome: pickHome, onPoint: pickPoint } = latest.current;
         const found = under(e);
         if (found && pickHome) pickHome(found);
         else pickPoint({ lat: e.latLng.getLat(), lng: e.latLng.getLng() });
@@ -368,8 +374,8 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
       let lastStep = 0;
       const zoomAt = (clientX: number, clientY: number, step: number) => {
         const box = host.current!.getBoundingClientRect();
-        // 휴식에서는 핀이 가리키는 곳이 벗어나지 않게 핀을 기준으로 확대한다.
-        const { x, y } = latest.current.homes ? { x: clientX - box.left, y: clientY - box.top } : focusSpot();
+        // 핀이 가리키는 곳이 벗어나지 않게 핀을 기준으로 확대한다.
+        const { x, y } = latest.current.focusPoint ? focusSpot() : { x: clientX - box.left, y: clientY - box.top };
         const anchor = map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(x, y));
         const level = Math.min(MAX_LEVEL, Math.max(1, map.getLevel() + step));
         if (level !== map.getLevel()) map.setLevel(level, { anchor, animate: { duration: 160 } });
@@ -414,7 +420,7 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
         if (!kit.current || !host.current) return;
         map.relayout();
         standPin();
-        if (!latest.current.homes && latest.current.focusPoint) centerOn(latest.current.focusPoint);
+        if (latest.current.focusPoint) centerOn(latest.current.focusPoint);
       });
       observer.observe(host.current);
       redraw.current();
@@ -440,12 +446,12 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, pinPoint, my
 
   useEffect(() => {
     redraw.current();
-  }, [cells, cellSize, scores, features, heatColor, homes, activeHome, spots, activeSpot, pinPoint, myPoint, focusPoint?.lat, focusPoint?.lng]);
+  }, [cells, cellSize, scores, features, heatColor, homes, activeHome, spots, activeSpot, myPoint, focusPoint?.lat, focusPoint?.lng]);
 
   return (
     <>
       <div ref={host} className="map" aria-label="서울 감각 점수 지도" />
-      <div ref={centerPin} className="map-pin" hidden={!pinPoint} aria-hidden="true">
+      <div ref={centerPin} className="map-pin" hidden={!focusPoint} aria-hidden="true">
         <i />
         <svg viewBox="0 0 32 42" width="32" height="42">
           <path d="M16 1C7.7 1 1 7.7 1 16c0 10.6 12.4 22.8 15 25 2.6-2.2 15-14.4 15-25C31 7.7 24.3 1 16 1Z" fill="#101418" stroke="#fff" strokeWidth="2" />
