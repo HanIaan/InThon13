@@ -26,6 +26,8 @@ type OsmTile = { spots: Spot[]; roads: number[][] };
 type BuildingRow = [number, number, number[], number, string, string, string];
 type StreetRow = [number, number, number[]];
 export type Street = { width: number; line: [number, number][] };
+// 종류: 0 주점, 1 노래방·PC방·오락, 2 배달 야식, 3 그 밖의 음식점, 4 카페, 5 편의점 (tools/build_stores.py)
+export type Store = { kind: number; lat: number; lng: number };
 type Point = { lat: number; lng: number };
 
 function tilesIn(view: Omit<MapView, "zoom">, tile: typeof TILE = TILE) {
@@ -117,6 +119,11 @@ export async function loadStreets(point: Point, margin = 0.008): Promise<Street[
   const rows = await Promise.all(tilesIn(around(point, margin), BUILDING_TILE).map((key) => load<StreetRow[]>(`/data/streets/${key}.json`).catch(() => [] as StreetRow[])));
   const unique = new Map(rows.flat().map((row) => [row[0], row]));
   return [...unique.values()].map(([, width, flat]) => ({ width, line: decodeRing(flat) }));
+}
+
+export async function loadStores(point: Point, margin = 0.005): Promise<Store[]> {
+  const rows = await Promise.all(tilesIn(around(point, margin), BUILDING_TILE).map((key) => load<number[][]>(`/data/stores/${key}.json`).catch(() => [] as number[][])));
+  return rows.flat().map(([kind, lat, lng]) => ({ kind, lat: lat / 1e5, lng: lng / 1e5 }));
 }
 
 // 일조 그림자 범위(600m)를 덮도록 경도 기준 약 660m까지 불러온다.

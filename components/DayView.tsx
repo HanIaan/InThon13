@@ -16,6 +16,7 @@ import type { Cell, Home } from "@/lib/data";
 import { DIRECTIONS, formatDuration, sunReport, type Building, type HomeInput } from "@/lib/home-report";
 import type { Street } from "@/lib/seoul";
 import { level, slotOf } from "@/lib/rest";
+import { startSoundscape, surroundings, type Surroundings } from "@/lib/soundscape";
 import { coverAt, groundAt, terrainSummary, type Cover } from "@/lib/terrain";
 
 type ViewMode = "window" | "orbit" | "top";
@@ -654,29 +655,6 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   };
 }
 
-// 녹음이 아니라 소음 dB에 맞춰 합성한 거리 소리다.
-function startStreetSound() {
-  const context = new AudioContext();
-  const buffer = context.createBuffer(1, context.sampleRate * 4, context.sampleRate);
-  const data = buffer.getChannelData(0);
-  let last = 0;
-  for (let i = 0; i < data.length; i++) {
-    last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
-    data[i] = last * 3.5;
-  }
-  const source = context.createBufferSource();
-  source.buffer = buffer;
-  source.loop = true;
-  const filter = context.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.value = 900;
-  const gain = context.createGain();
-  gain.gain.value = 0;
-  source.connect(filter).connect(gain).connect(context.destination);
-  source.start();
-  return { setDb: (db: number) => gain.gain.setTargetAtTime(clamp((db - 30) / 45) ** 2, context.currentTime, 0.2), stop: () => context.close() };
-}
-
 export default function DayView({
   home,
   cell,
@@ -703,7 +681,9 @@ export default function DayView({
   const [minute, setMinute] = useState(720);
   const [playing, setPlaying] = useState(false);
   const [listening, setListening] = useState(false);
-  const sound = useRef<ReturnType<typeof startStreetSound> | null>(null);
+  const sound = useRef<ReturnType<typeof startSoundscape> | null>(null);
+  const around = useRef<Promise<Surroundings> | null>(null);
+  const wantSound = useRef(false);
   const room = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
   const look = useRef({ yaw: 0, pitch: 0 });
@@ -783,9 +763,10 @@ export default function DayView({
     return () => window.clearInterval(timer);
   }, [playing]);
 
+  // 소리는 시각·날짜·층에 따라 층별 크기가 바뀌고, 전체 크기는 그 시간대 소음 dB를 따른다.
   useEffect(() => {
-    sound.current?.setDb(cell.noiseDb[slot]);
-  }, [slot, listening]);
+    sound.current?.update({ minute, date, db: cell.noiseDb[slot], floor: input.floor });
+  }, [minute, date, slot, input.floor, listening]);
 
   useEffect(
     () => () => {
@@ -796,12 +777,21 @@ export default function DayView({
 
   const toggleSound = () => {
     if (listening) {
+      wantSound.current = false;
       sound.current?.stop();
       sound.current = null;
-    } else {
-      sound.current = startStreetSound();
+      setListening(false);
+      return;
     }
-    setListening(!listening);
+    // 주변 환경(도로·업소·녹지·학교)은 처음 들을 때 한 번만 계산한다.
+    around.current ??= surroundings(home, streets, buildings ?? []);
+    wantSound.current = true;
+    setListening(true);
+    around.current.then((env) => {
+      if (sound.current || !wantSound.current) return;
+      sound.current = startSoundscape(env);
+      sound.current.update({ minute, date, db: cell.noiseDb[slot], floor: input.floor });
+    });
   };
 
   useEffect(() => {
