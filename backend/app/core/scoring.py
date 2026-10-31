@@ -22,7 +22,7 @@ from app.contracts.data_interfaces import CellIndicators, IndicatorValue
 
 # (best, worst): raw value at which the score is 100, and at which it is 0.
 NOISE_DB_RANGE = (40.0, 75.0)          # WHO night guideline ~40 dB; arterial road ~75 dB
-LIGHT_LUX_RANGE = (1.0, 100.0)         # S-DoT ambient lux after dark, log scale
+LIGHT_LUX_RANGE = (1.0, 100.0)         # S-DoT lux; legacy/mock only — live light scores use NASA radiance
 LIGHT_RADIANCE_RANGE = (5.0, 150.0)    # NASA Black Marble nW/cm²/sr, log scale
 CROWD_DENSITY_RANGE = (1_000.0, 60_000.0)  # living population persons/km², log scale
 
