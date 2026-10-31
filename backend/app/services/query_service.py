@@ -1,7 +1,7 @@
 """Builds API responses from a DataProvider. Provider-agnostic: mock and live share this."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.contracts import api_models as m
@@ -113,13 +113,46 @@ def grid_features(provider: DataProvider, bbox, slot: TimeSlot, sens: m.Sensitiv
     return m.GridFeatureCollection(features=features, meta=meta)
 
 
+# Display precision per raw unit (response only; precomputed values are untouched).
+RAW_DECIMALS = {"dB": 1, "lux": 1, "nW/cm2/sr": 1, "persons/km2": 0}
+CROWD_PERIOD_GAP = timedelta(days=30)
+
+
+def _round_raw(value: float | None, unit: str | None) -> float | None:
+    digits = RAW_DECIMALS.get(unit)
+    if value is None or digits is None:
+        return value
+    return float(round(value, digits)) if digits else float(round(value))
+
+
+def _source_name(v: IndicatorValue) -> str | None:
+    name = SOURCE_NAMES.get(v.source.value) if v.source else None
+    if name and v.status is DataStatus.mock:
+        name += " (mock)"
+    return name
+
+
+def _crowd_period_note(cell: CellIndicators) -> str | None:
+    """Warn when living-population data predates the sensor measurement window by >= 30 days."""
+    crowd = cell.crowd
+    if crowd.period_start is None or crowd.period_end is None:
+        return None
+    others = [v.period_start for v in (cell.noise, cell.light) if v.period_start is not None]
+    if not any(start - crowd.period_end >= CROWD_PERIOD_GAP for start in others):
+        return None
+    # period_end is exclusive; show the last covered day.
+    last_day = (crowd.period_end - timedelta(microseconds=1)).date()
+    return (f"혼잡도는 {crowd.period_start.date().isoformat()}~{last_day.isoformat()} 생활인구 기준이며 "
+            "소음·조도 측정 기간과 다릅니다.")
+
+
 def _indicator_detail(ind: Indicator, v: IndicatorValue, score: float | None) -> m.IndicatorDetail:
     return m.IndicatorDetail(
-        indicator=ind, score=score, raw_value=v.raw_value, raw_unit=v.raw_unit, status=v.status,
-        source=v.source, source_name=SOURCE_NAMES.get(v.source.value) if v.source else None,
+        indicator=ind, score=score, raw_value=_round_raw(v.raw_value, v.raw_unit), raw_unit=v.raw_unit, status=v.status,
+        source=v.source, source_name=_source_name(v),
         observed_at=v.observed_at, period_start=v.period_start, period_end=v.period_end, method=v.method,
         nearby_sensors=[m.NearbySensor(sensor_id=e.sensor_id, source=e.source, name=e.name, coordinates=(e.lng, e.lat),
-                                       distance_m=e.distance_m, raw_value=e.raw_value, raw_unit=e.raw_unit,
+                                       distance_m=e.distance_m, raw_value=_round_raw(e.raw_value, e.raw_unit), raw_unit=e.raw_unit,
                                        observed_at=e.observed_at) for e in v.evidence],
         note=v.note,
     )
@@ -146,6 +179,8 @@ def inspect(provider: DataProvider, lat: float, lng: float, slot: TimeSlot, sens
         notes.append("Mock 모드: 모든 값은 데모용 합성 데이터입니다.")
     if sc.comfort_score is None:
         notes.append("사용 가능한 지표가 없어 감각지수를 계산하지 않았습니다.")
+    if provider.data_mode == "live" and (period_note := _crowd_period_note(cell)):
+        notes.append(period_note)
     return m.LocationInspectResponse(
         query=m.InspectQuery(lat=lat, lng=lng, time_slot=slot, **sens.model_dump()),
         grid_id=gid, grid_center=grid.cell_center(ix, iy),
