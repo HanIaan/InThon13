@@ -27,7 +27,6 @@ export function MainSheet({
   target,
   scoreTitle,
   score,
-  cause,
   up,
   emptyValues,
   left,
@@ -36,7 +35,6 @@ export function MainSheet({
   target: SheetTarget;
   scoreTitle: string;
   score: SheetScore;
-  cause?: string;
   up: boolean;
   emptyValues: string[];
   left: ReactNode;
@@ -78,7 +76,6 @@ export function MainSheet({
             <p className="where">{scoreTitle}</p>
             <p className="score">{score.value ?? "-"}</p>
             <p className="verdict" style={{ color: score.color }}>{score.label}</p>
-            {cause && <p className="cause">{cause}</p>}
           </div>
           {left}
         </div>

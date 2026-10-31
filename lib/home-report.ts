@@ -105,12 +105,6 @@ export function homeTotal(parts: HomePart[]) {
   return Math.round(counted.reduce((total, part) => total + part.score * part.weight, 0) / (sum || parts.length));
 }
 
-export function homeSummary(parts: HomePart[]) {
-  const weighted = parts.filter((part) => part.weight > 0);
-  const counted = [...(weighted.length ? weighted : parts)].sort((a, b) => b.score - a.score);
-  return `강점 ${counted[0].name} · 주의 ${counted[counted.length - 1].name}`;
-}
-
 export function daylightScore(winterMinutes: number) {
   return Math.round(Math.min(winterMinutes / 240, 1) * 100);
 }

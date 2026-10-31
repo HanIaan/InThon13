@@ -9,7 +9,6 @@ import { GlassSheets, MainSheet } from "@/components/Sheets";
 import {
   adjustedLight,
   daylightScore,
-  homeSummary,
   homeTotal,
   nearestSensor,
   sensorDaylight,
@@ -52,8 +51,6 @@ import {
   SENSE_LABEL,
   slotOf,
   SLOTS,
-  topSense,
-  type Burden,
   type Sense,
   type Sensitivity,
   type Slot,
@@ -79,6 +76,8 @@ const DayView = dynamic(() => import("@/components/DayView"), { ssr: false });
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
 const HOME_SEARCH_M = 1500;
+const DAY_HOUR = 12;
+const NIGHT_HOUR = 22;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
 export default function Home() {
@@ -403,10 +402,6 @@ export default function Home() {
   const sliders = <SensitivitySliders value={sensitivity} isHome={isHome} lightOff={lightOff} onChange={setSensitivity} />;
   const sheetScore = { value: score, label, color: scoreGrade.color };
   const scoreTitle = isHome ? "내 감각 종합 점수" : `${hourLabel(hour)} 내 감각 쉼 지수`;
-  const restBurden = { ...burden, light: lightOff ? 0 : burden?.light } as Burden;
-  const cause = isHome
-    ? total === null ? undefined : homeSummary(homeParts)
-    : target ? `가장 큰 부담 ${SENSE_LABEL[topSense(restBurden, sensitivity)]}` : undefined;
 
   return (
     <>
@@ -458,7 +453,6 @@ export default function Home() {
             target={target}
             scoreTitle={scoreTitle}
             score={sheetScore}
-            cause={cause}
             up={up}
             emptyValues={[looking, noInfo]}
             left={
@@ -510,16 +504,31 @@ export default function Home() {
                 </>
               ) : (
                 <>
-                  <dl className="levels">
-                    {SENSES.map((s) => (
-                      <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
-                    ))}
-                  </dl>
-                  <RestHours
-                    hour={hour}
-                    scoreAt={(mark) => restScore(burdenAt(target.cell.burdens, mark), sensitivity)}
-                    onHour={setHour}
-                  />
+                  <div className="side-head">
+                    <ModeSwitch
+                      label="낮과 밤"
+                      options={[{ id: "day", label: "낮" }, { id: "night", label: "밤" }]}
+                      value={slot === "day" ? "day" : "night"}
+                      onChange={(next) => setHour(next === "day" ? DAY_HOUR : NIGHT_HOUR)}
+                    />
+                  </div>
+                  <div className="slot">
+                    <div className="report-card">
+                      <RestHours
+                        hour={hour}
+                        scoreAt={(mark) => restScore(burdenAt(target.cell.burdens, mark), sensitivity)}
+                        onHour={setHour}
+                      />
+                    </div>
+                  </div>
+                  <div className="report-card">
+                    <h2>지금 감각</h2>
+                    <dl className="levels">
+                      {SENSES.map((s) => (
+                        <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
+                      ))}
+                    </dl>
+                  </div>
                 </>
               )
             }
