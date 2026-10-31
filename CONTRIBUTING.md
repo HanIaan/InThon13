@@ -1,28 +1,36 @@
 # 프론트엔드 2인 협업 규칙
 
-## 역할
+## 역할과 브랜치
 
-| 담당 | 맡을 파일 |
-| --- | --- |
-| A: 휴식 | `components/RestViews.tsx`, `components/RestMap.tsx` |
-| B: 주거·정보 | `components/HomeViews.tsx`, `components/Sheets.tsx` |
+| 담당 | 브랜치 | 맡을 파일 |
+| --- | --- | --- |
+| A: 휴식 | `frontend/a-rest` | `components/RestViews.tsx`, `components/RestMap.tsx` |
+| B: 주거·정보 | `frontend/b-home` | `components/HomeViews.tsx`, `components/Sheets.tsx` |
 
 `app/page.tsx`, `app/globals.css`, `lib/rest.ts`는 함께 쓰는 파일입니다. 고치기 전에 상대에게 먼저 알립니다.
 
 ## 작업 순서
 
+자기 브랜치로 이동합니다. A는 `frontend/a-rest`, B는 `frontend/b-home`을 씁니다.
+
 ```bash
-git switch main
+git switch frontend/a-rest
 git pull
-git switch -c feature/작업-이름
 ```
 
-작업이 끝나면 푸시하고 Pull Request를 만들어 서로 확인한 뒤 `main`에 합칩니다.
+시작하기 전에 `main`의 최신 내용을 합칩니다.
+
+```bash
+git fetch origin
+git merge origin/main
+```
+
+작업이 끝나면 확인하고 푸시한 뒤 Pull Request로 `main`에 합칩니다.
 
 ```bash
 npx tsc --noEmit
 npm run build
-git push -u origin feature/작업-이름
+git push
 ```
 
 ## 규칙
