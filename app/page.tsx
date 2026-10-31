@@ -15,7 +15,6 @@ import {
   sensorDaylight,
   sleepScore,
   homeVerdict,
-  SUN_WEIGHT,
   sunReport,
   type Building,
   type HomeInput,
@@ -33,15 +32,14 @@ import {
 } from "@/lib/api";
 import {
   BOUNDS,
-  buildGrid,
   cellForHome,
+  distanceMeters,
   homeAtPoint,
-  HOMES,
-  nearestCell,
   nearestHome,
   nearestToPoint,
   placePoint,
   recommendSpots,
+  SEED_HOMES,
   type Cell,
   type Home as HomePlace,
 } from "@/lib/data";
@@ -60,6 +58,7 @@ import {
   type Sensitivity,
   type Slot,
 } from "@/lib/rest";
+import { CELL_SIZE, DETAIL_ZOOM, loadBuildings, OVERVIEW_SIZE, useSeoul, type MapView } from "@/lib/seoul";
 import { useGlideScroll } from "@/lib/use-glide-scroll";
 
 // 역지오코딩 주소의 "안암동 안암동3가"처럼 겹치는 말과 건물 이름을 뺀다.
@@ -69,18 +68,20 @@ function tidyAddress(address: string, name?: string | null) {
 }
 
 const RestMap = dynamic(() => import("@/components/RestMap"), { ssr: false });
+const DayView = dynamic(() => import("@/components/DayView"), { ssr: false });
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
+const HOME_ZOOM = 15;
+const HOME_SEARCH_M = 1500;
 const START_POINT = { lat: 37.5826, lng: 127.0253 };
 
 export default function Home() {
-  const cells = useMemo(buildGrid, []);
   const [hour, setHour] = useState(23);
-  const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 4, light: 2, crowd: 3 });
+  const [sensitivity, setSensitivity] = useState<Sensitivity>({ sound: 4, light: 2, crowd: 3, sun: 3 });
   const [point, setPoint] = useState(START_POINT);
   const [picked, setPicked] = useState(false);
   const [activeSpot, setActiveSpot] = useState<string | null>(null);
-  const [home, setHome] = useState<HomePlace>(() => nearestHome(START_POINT.lat, START_POINT.lng));
+  const [home, setHome] = useState<HomePlace>(() => nearestHome(SEED_HOMES, START_POINT.lat, START_POINT.lng));
   const [homeInput, setHomeInput] = useState<HomeInput>({ floor: 3, direction: "south" });
   const [buildings, setBuildings] = useState<Building[] | null>(null);
   const [query, setQuery] = useState("");
@@ -94,19 +95,35 @@ export default function Home() {
   const [applied, setApplied] = useState(sensitivity);
   const [lookup, setLookup] = useState<{ key: string; address?: string; name?: string } | null>(null);
   const [view, setView] = useState<"day" | "night">("day");
+  const [dayOpen, setDayOpen] = useState(false);
+  const [mapView, setMapView] = useState<MapView | null>(null);
+  const [pendingHome, setPendingHome] = useState<{ lat: number; lng: number } | null>(null);
 
   const isHome = tab === "home";
   const showDay = isHome && view === "day";
+  const { cells, homes, spots: allSpots, overview, anchorReady } = useSeoul(mapView, isHome ? pendingHome ?? home : point);
+  const detailed = Boolean(mapView && mapView.zoom >= DETAIL_ZOOM);
+  const heatCells = useMemo(() => {
+    if (!mapView || !detailed) return overview.length ? overview : cells;
+    const [padLat, padLng] = [(mapView.north - mapView.south) / 2, (mapView.east - mapView.west) / 2];
+    return cells.filter(
+      (c) => c.lat > mapView.south - padLat && c.lat < mapView.north + padLat && c.lng > mapView.west - padLng && c.lng < mapView.east + padLng,
+    );
+  }, [cells, overview, mapView, detailed]);
+  const visibleHomes = useMemo(() => {
+    if (!isHome || !mapView || mapView.zoom < HOME_ZOOM) return [];
+    return homes.filter((h) => h.lat > mapView.south && h.lat < mapView.north && h.lng > mapView.west && h.lng < mapView.east);
+  }, [isHome, homes, mapView]);
   const slot = slotOf(hour);
   const pointCell = useMemo(
-    () => nearestToPoint(cells, point.lat, point.lng, 3) ?? nearestCell(cells, "안암동 주택가")!,
-    [cells, point],
+    () => nearestToPoint(cells, point.lat, point.lng, 0.25) ?? nearestToPoint(overview, point.lat, point.lng, 1) ?? cells[0],
+    [cells, overview, point],
   );
-  const homeCell = cellForHome(home, cells);
+  const homeCell = useMemo(() => cellForHome(home, cells), [home, cells]);
 
   const scores = useMemo(() => {
     const map = new Map<string, number>();
-    for (const cell of cells) {
+    for (const cell of heatCells) {
       map.set(
         cell.id,
         isHome
@@ -115,11 +132,11 @@ export default function Home() {
       );
     }
     return map;
-  }, [cells, hour, sensitivity, isHome]);
+  }, [heatCells, hour, sensitivity, isHome]);
 
   const spots = useMemo(
-    () => (isHome ? [] : recommendSpots(cells, point, hour, sensitivity)),
-    [cells, point, hour, sensitivity, isHome],
+    () => (isHome ? [] : recommendSpots(cells, allSpots, point, hour, sensitivity)),
+    [cells, allSpots, point, hour, sensitivity, isHome],
   );
   const active = picked ? undefined : spots.find((s) => s.spot.id === activeSpot) ?? spots[0];
 
@@ -193,14 +210,25 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!isHome || buildings) return;
-    const control = new AbortController();
-    fetch("/buildings.json", { signal: control.signal })
-      .then((res) => res.json())
-      .then(setBuildings)
-      .catch(() => {});
-    return () => control.abort();
-  }, [isHome, buildings]);
+    if (!isHome) return;
+    let current = true;
+    setBuildings(null);
+    loadBuildings(home).then((list) => {
+      if (current) setBuildings(list);
+    });
+    return () => {
+      current = false;
+    };
+  }, [isHome, home]);
+
+  // 검색한 곳의 구역이 도착하면 가장 가까운 주거 건물을 고른다.
+  useEffect(() => {
+    if (!pendingHome || !anchorReady) return;
+    const nearest = nearestHome(homes, pendingHome.lat, pendingHome.lng);
+    if (distanceMeters(nearest, pendingHome) <= HOME_SEARCH_M) chooseHome(nearest);
+    else setToast("이 지역의 주거 건물 정보가 없어요");
+    setPendingHome(null);
+  }, [pendingHome, anchorReady, homes]);
 
   useEffect(() => {
     if (!toast) return;
@@ -237,7 +265,7 @@ export default function Home() {
     const place = placePoint(name);
     if (!place) return;
     if (isHome) {
-      chooseHome(nearestHome(place.lat, place.lng));
+      setPendingHome(place);
     } else {
       setPoint({ lat: place.lat, lng: place.lng });
       setPicked(true);
@@ -247,13 +275,13 @@ export default function Home() {
   function chooseOnMap(next: { lat: number; lng: number }) {
     if (up) return;
     if (isHome) {
-      const found = homeAtPoint(next.lat, next.lng);
+      const found = homeAtPoint(homes, next.lat, next.lng);
       if (found) chooseHome(found);
-      else setToast("주거 시설만 선택할 수 있어요");
+      else setToast(mapView && mapView.zoom < HOME_ZOOM ? "지도를 확대해 건물을 골라 주세요" : "주거 시설만 선택할 수 있어요");
       return;
     }
-    if (!nearestToPoint(cells, next.lat, next.lng, 0.2)) {
-      setToast("안암동 일대만 볼 수 있어요");
+    if (!nearestToPoint(overview, next.lat, next.lng, 0.6)) {
+      setToast("서울 안에서만 볼 수 있어요");
       return;
     }
     setPoint(next);
@@ -272,7 +300,7 @@ export default function Home() {
   }
 
   const sleepOf = (item: HomePlace, input: HomeInput) => {
-    const cell = cellForHome(item, cells);
+    const cell = homeCell;
     const light = adjustedLight(cell.burdens.night.light, input, item.lat, item.lng);
     return { cell, light, sleep: sleepScore(cell.burdens.night.sound, light, sensitivity) };
   };
@@ -336,12 +364,10 @@ export default function Home() {
   const noiseDayPoint = Math.round(100 - homeCell.burdens.day.sound);
   const noiseNightPoint = Math.round(100 - homeCell.burdens.night.sound);
   const lightPoint = Math.round(100 - homeResult.light);
-  const crowdPoint = 100 - (homeCell.burdens.day.crowd + homeCell.burdens.night.crowd) / 2;
   const homeParts = [
-    { name: "일조", score: sunPoint ?? 0, weight: SUN_WEIGHT },
+    { name: "일조", score: sunPoint ?? 0, weight: sensitivity.sun },
     { name: "소음", score: (noiseDayPoint + noiseNightPoint) / 2, weight: sensitivity.sound },
     { name: "빛공해", score: lightPoint, weight: sensitivity.light },
-    { name: "혼잡", score: crowdPoint, weight: sensitivity.crowd },
   ];
   const total = sunPoint === null ? null : homeTotal(homeParts);
   const score = target ? (isHome ? total : restScore(burden!, sensitivity)) : null;
@@ -359,7 +385,7 @@ export default function Home() {
     return indicatorText(detail?.indicators?.[key]) ?? level(target.cell.burdens.night[sense]);
   };
 
-  const sliders = <SensitivitySliders value={sensitivity} lightOff={lightOff} onChange={setSensitivity} />;
+  const sliders = <SensitivitySliders value={sensitivity} isHome={isHome} lightOff={lightOff} onChange={setSensitivity} />;
   const sheetScore = { value: score, label, color: scoreGrade.color };
   const scoreTitle = isHome ? "내 감각 종합 점수" : `${hourLabel(hour)} 내 감각 쉼 지수`;
   const restBurden = { ...burden, light: lightOff ? 0 : burden?.light } as Burden;
@@ -371,17 +397,19 @@ export default function Home() {
     <>
       <div className="map-layer">
         <RestMap
-          cells={cells}
+          cells={heatCells}
+          cellSize={detailed ? CELL_SIZE : OVERVIEW_SIZE}
           scores={scores}
           features={live ? grid!.features : null}
           pinPoint={isHome ? null : point}
-          focusPoint={target ? { lat: target.lat, lng: target.lng } : null}
+          focusPoint={pendingHome ?? (target ? { lat: target.lat, lng: target.lng } : null)}
           spots={spots}
           activeSpot={active?.spot.id ?? null}
-          homes={isHome ? HOMES : null}
+          homes={isHome ? visibleHomes : null}
           activeHome={isHome ? home : null}
           onSpot={chooseSpot}
           onPoint={chooseOnMap}
+          onView={setMapView}
         />
       </div>
 
@@ -436,12 +464,15 @@ export default function Home() {
             side={
               isHome ? (
                 <>
-                  <ModeSwitch
-                    label="낮과 밤"
-                    options={[{ id: "day", label: "낮" }, { id: "night", label: "밤" }]}
-                    value={view}
-                    onChange={setView}
-                  />
+                  <div className="side-head">
+                    <ModeSwitch
+                      label="낮과 밤"
+                      options={[{ id: "day", label: "낮" }, { id: "night", label: "밤" }]}
+                      value={view}
+                      onChange={setView}
+                    />
+                    <button className="day-open" onClick={() => setDayOpen(true)} aria-label="이 집의 하루 보기">하루</button>
+                  </div>
                   <div className="slot">
                     {showDay ? (
                       <SunCard
@@ -479,6 +510,19 @@ export default function Home() {
             }
           />
         </GlassSheets>
+      )}
+
+      {dayOpen && isHome && (
+        <DayView
+          home={home}
+          cell={homeCell}
+          input={homeInput}
+          maxFloor={Number(home.levels) || 30}
+          buildings={buildings}
+          lightScore={lightPoint}
+          onInput={setHomeInput}
+          onClose={() => setDayOpen(false)}
+        />
       )}
     </>
   );

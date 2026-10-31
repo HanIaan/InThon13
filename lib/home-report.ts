@@ -1,6 +1,6 @@
 import { getPosition, getTimes } from "suncalc";
-import roads from "./roads.json";
-import sensors from "./sensors.json";
+import seedRoads from "./roads.json";
+import seedSensors from "./sensors.json";
 import type { Sensitivity } from "./rest";
 
 // 기획서 6-2~6-4장의 주거 계산이다. 층·창문 보정값은 기획서의 초기 추정치를 따른다.
@@ -35,9 +35,22 @@ function degreeOf(direction: Direction) {
   return DIRECTIONS.find((d) => d.id === direction)!.degree;
 }
 
+type Sensor = { lat: number; lng: number; hourly: (number | null)[] };
+
+const roads = [...seedRoads] as [number, number][][];
+let sensors = seedSensors as Sensor[];
+
+export function addRoads(lines: [number, number][][]) {
+  roads.push(...lines);
+}
+
+export function setSensors(list: Sensor[]) {
+  sensors = list;
+}
+
 function nearestRoadBearing(lat: number, lng: number) {
   let best = { distance: Infinity, x: 0, y: 0 };
-  for (const line of roads as [number, number][][]) {
+  for (const line of roads) {
     for (const [roadLat, roadLng] of line) {
       const { x, y } = toMeters({ lat, lng }, roadLat, roadLng);
       const distance = Math.hypot(x, y);
@@ -74,18 +87,18 @@ export function sleepScore(noiseNight: number, light: number, sensitivity: Sensi
   return Math.round(Math.max(0, Math.min(100, 100 - noiseLoad - lightLoad)));
 }
 
-// 백엔드 comfort_score처럼 민감도 비율로 가중 평균한다. 일조는 슬라이더가 없어 기본 민감도로 둔다.
+// 백엔드 comfort_score처럼 민감도 비율로 가중 평균하고, 모두 0이면 균등하게 본다.
 export type HomePart = { name: string; score: number; weight: number };
 
 export function homeTotal(parts: HomePart[]) {
   const sum = parts.reduce((total, part) => total + part.weight, 0);
-  return Math.round(parts.reduce((total, part) => total + part.score * part.weight, 0) / sum);
+  const counted = sum ? parts : parts.map((part) => ({ ...part, weight: 1 }));
+  return Math.round(counted.reduce((total, part) => total + part.score * part.weight, 0) / (sum || parts.length));
 }
 
-export const SUN_WEIGHT = NEUTRAL_SENSITIVITY;
-
 export function homeSummary(parts: HomePart[]) {
-  const counted = parts.filter((part) => part.weight > 0).sort((a, b) => b.score - a.score);
+  const weighted = parts.filter((part) => part.weight > 0);
+  const counted = [...(weighted.length ? weighted : parts)].sort((a, b) => b.score - a.score);
   return `강점 ${counted[0].name} · 주의 ${counted[counted.length - 1].name}`;
 }
 
@@ -151,7 +164,7 @@ function sunlightOn(date: string, window: { lat: number; lng: number; height: nu
 }
 
 // 기획서 6-3: 창문에서 태양 쪽으로 선을 그어 주변 건물에 가리는지 10분 단위로 확인한다.
-export function sunReport(home: { lat: number; lng: number; ring: [number, number][] }, input: HomeInput, buildings: Building[]): SunReport {
+export function sunReport(home: { lat: number; lng: number; ring: [number, number][] }, input: HomeInput, buildings: Building[], date: string = WINTER_SOLSTICE): SunReport {
   const around = buildings
     .map((b) => ({ levels: b.levels, ring: b.ring.map(([lat, lng]) => toMeters(home, lat, lng)) }))
     .filter((b) => b.ring.some((p) => Math.hypot(p.x, p.y) < SHADE_RANGE_M + 40))
@@ -162,7 +175,7 @@ export function sunReport(home: { lat: number; lng: number; ring: [number, numbe
     .map((b) => ({ height: (b.levels ?? UNKNOWN_LEVELS) * FLOOR_METERS, ring: b.ring, missing: b.levels === null }));
   const window = { lat: home.lat, lng: home.lng, height: (input.floor - 1) * FLOOR_METERS + 1.5 };
   return {
-    winter: sunlightOn(WINTER_SOLSTICE, window, input.direction, around),
+    winter: sunlightOn(date, window, input.direction, around),
     missingLevels: around.length ? Math.round((around.filter((b) => b.missing).length / around.length) * 100) : 0,
   };
 }
@@ -190,7 +203,7 @@ export type SensorCard = { distance: number; hourly: (number | null)[] };
 
 export function nearestSensor(lat: number, lng: number): SensorCard | null {
   let best: SensorCard | null = null;
-  for (const sensor of sensors as { lat: number; lng: number; hourly: (number | null)[] }[]) {
+  for (const sensor of sensors) {
     const { x, y } = toMeters({ lat, lng }, sensor.lat, sensor.lng);
     const distance = Math.round(Math.hypot(x, y));
     if (!best || distance < best.distance) best = { distance, hourly: sensor.hourly };

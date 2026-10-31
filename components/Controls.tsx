@@ -4,28 +4,36 @@ import type { ReactNode } from "react";
 import { PLACES } from "@/lib/data";
 import { hourLabel, SENSE_LABEL, type Sense, type Sensitivity } from "@/lib/rest";
 
-const SENSES: Sense[] = ["sound", "light", "crowd"];
+const REST_SLIDERS: { id: keyof Sensitivity; label: string }[] = (["sound", "light", "crowd"] as Sense[]).map((id) => ({ id, label: SENSE_LABEL[id] }));
+const HOME_SLIDERS: { id: keyof Sensitivity; label: string }[] = [
+  { id: "sound", label: SENSE_LABEL.sound },
+  { id: "light", label: SENSE_LABEL.light },
+  { id: "sun", label: "일조량" },
+];
+const PLACE_NAMES = PLACES.map((place) => place.name);
 
 export function SensitivitySliders({
   value,
+  isHome,
   lightOff,
   onChange,
 }: {
   value: Sensitivity;
+  isHome: boolean;
   lightOff: boolean;
   onChange: (next: Sensitivity) => void;
 }) {
-  return SENSES.map((s) => (
-    <label key={s} className="range">
-      <span>{SENSE_LABEL[s]} <b>{s === "light" && lightOff ? "야간 전용" : value[s]}</b></span>
+  return (isHome ? HOME_SLIDERS : REST_SLIDERS).map(({ id, label }) => (
+    <label key={id} className="range">
+      <span>{label} <b>{id === "light" && lightOff ? "야간 전용" : value[id]}</b></span>
       <input
         type="range"
         min={0}
         max={5}
         step={1}
-        disabled={s === "light" && lightOff}
-        value={value[s]}
-        onChange={(e) => onChange({ ...value, [s]: Number(e.target.value) })}
+        disabled={id === "light" && lightOff}
+        value={value[id]}
+        onChange={(e) => onChange({ ...value, [id]: Number(e.target.value) })}
       />
     </label>
   ));
@@ -108,7 +116,7 @@ export function Dock({
         className="search glass"
         onSubmit={(e) => {
           e.preventDefault();
-          if (PLACES.includes(query)) {
+          if (PLACE_NAMES.includes(query)) {
             onPick(query);
             onQuery("");
           }
@@ -118,7 +126,7 @@ export function Dock({
           list="places"
           value={query}
           onChange={(e) => {
-            if (PLACES.includes(e.target.value)) {
+            if (PLACE_NAMES.includes(e.target.value)) {
               onPick(e.target.value);
               onQuery("");
             } else {
@@ -128,7 +136,7 @@ export function Dock({
           placeholder="장소 검색"
           aria-label="장소 검색"
         />
-        <datalist id="places">{PLACES.map((p) => <option key={p} value={p} />)}</datalist>
+        <datalist id="places">{PLACE_NAMES.map((p) => <option key={p} value={p} />)}</datalist>
         <button type="submit">검색</button>
       </form>
     </div>

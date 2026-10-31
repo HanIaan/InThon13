@@ -4,13 +4,15 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { GridFeature } from "@/lib/api";
-import { BOUNDS, CELL, PLACE_POINTS, type Cell, type Home, type Recommendation } from "@/lib/data";
+import { BOUNDS, type Cell, type Home, type Recommendation } from "@/lib/data";
+import { CELL_SIZE as CELL, SEOUL, type MapView } from "@/lib/seoul";
 import { restColor } from "@/lib/rest";
 
 type Point = { lat: number; lng: number };
 
 type Props = {
   cells: Cell[];
+  cellSize: { lat: number; lng: number };
   scores: Map<string, number>;
   features: GridFeature[] | null;
   pinPoint: Point | null;
@@ -21,6 +23,7 @@ type Props = {
   activeHome: Home | null;
   onSpot: (id: string) => void;
   onPoint: (point: Point) => void;
+  onView: (view: MapView) => void;
 };
 
 const EMPTY_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
@@ -30,27 +33,33 @@ const HEAT_BOUNDS: L.LatLngBoundsExpression = [
   [BOUNDS.south - CELL.lat / 2, BOUNDS.west - CELL.lng / 2],
   [BOUNDS.south + (ROWS - 0.5) * CELL.lat, BOUNDS.west + (COLS - 0.5) * CELL.lng],
 ];
-const MAP_BOUNDS: L.LatLngBoundsExpression = [
-  [BOUNDS.south, BOUNDS.west],
-  [BOUNDS.north, BOUNDS.east],
-];
+const MAX_CANVAS = 2048;
 
 // 격자가 지도와 살짝 기울어 있어 칸마다 조금 크게 그려 틈을 메우고, CSS 흐림으로 부드럽게 만든다.
-function heatImage(cells: Cell[], scores: Map<string, number>) {
-  const scale = 4;
+function heatImage(cells: Cell[], scores: Map<string, number>, size: { lat: number; lng: number }) {
+  const south = Math.min(...cells.map((c) => c.lat)) - size.lat;
+  const north = Math.max(...cells.map((c) => c.lat)) + size.lat;
+  const west = Math.min(...cells.map((c) => c.lng)) - size.lng;
+  const east = Math.max(...cells.map((c) => c.lng)) + size.lng;
+  const cols = (east - west) / size.lng;
+  const rows = (north - south) / size.lat;
+  const scale = Math.min(4, MAX_CANVAS / Math.max(cols, rows));
   const canvas = document.createElement("canvas");
-  canvas.width = COLS * scale;
-  canvas.height = ROWS * scale;
+  canvas.width = Math.ceil(cols * scale);
+  canvas.height = Math.ceil(rows * scale);
   const ctx = canvas.getContext("2d")!;
   for (const cell of cells) {
     const score = scores.get(cell.id);
     if (score === undefined) continue;
-    const col = (cell.lng - BOUNDS.west) / CELL.lng + 0.5;
-    const row = ROWS - 0.5 - (cell.lat - BOUNDS.south) / CELL.lat;
+    const col = (cell.lng - west) / size.lng;
+    const row = (north - cell.lat) / size.lat;
     ctx.fillStyle = `rgb(${restColor(score).join(",")})`;
     ctx.fillRect((col - 0.6) * scale, (row - 0.6) * scale, 1.2 * scale, 1.2 * scale);
   }
-  return canvas.toDataURL();
+  return {
+    url: canvas.toDataURL(),
+    bounds: [[south, west], [north, east]] as L.LatLngTuple[],
+  };
 }
 
 // 서버 격자는 크기가 달라질 수 있어 도형 그대로 그린다. 신뢰도가 낮을수록 옅게 표시한다.
@@ -98,6 +107,7 @@ function placeOnMap(instance: L.Map, point: Point, zoom: number, animate: boolea
 
 export default function RestMap({
   cells,
+  cellSize,
   scores,
   features,
   pinPoint,
@@ -108,6 +118,7 @@ export default function RestMap({
   activeHome,
   onSpot,
   onPoint,
+  onView,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -115,18 +126,24 @@ export default function RestMap({
   const pin = useRef<L.CircleMarker | null>(null);
   const pins = useRef<L.LayerGroup | null>(null);
   const buildings = useRef<L.LayerGroup | null>(null);
+  const renderer = useRef<L.Canvas | null>(null);
   const outline = useRef<L.Polygon | null>(null);
   const placed = useRef(false);
   const choosePoint = useRef(onPoint);
   choosePoint.current = onPoint;
   const chooseSpot = useRef(onSpot);
   chooseSpot.current = onSpot;
+  const reportView = useRef(onView);
+  reportView.current = onView;
 
   useEffect(() => {
     if (!host.current || map.current) return;
     const instance = L.map(host.current, {
       center: [37.5865, 127.0295],
       zoom: 15,
+      minZoom: 11,
+      maxBounds: [[SEOUL.south, SEOUL.west], [SEOUL.north, SEOUL.east]],
+      maxBoundsViscosity: 0.8,
       zoomSnap: 0.25,
       zoomControl: false,
       scrollWheelZoom: false,
@@ -140,20 +157,20 @@ export default function RestMap({
     }).addTo(instance);
 
     heat.current = L.imageOverlay(EMPTY_IMAGE, HEAT_BOUNDS, { className: "heat" }).addTo(instance);
+    renderer.current = L.canvas().addTo(instance);
     buildings.current = L.layerGroup().addTo(instance);
     pins.current = L.layerGroup().addTo(instance);
 
     instance.on("click", (e) => choosePoint.current({ lat: e.latlng.lat, lng: e.latlng.lng }));
 
-    for (const place of PLACE_POINTS) {
-      L.marker([place.lat, place.lng], {
-        interactive: false,
-        icon: L.divIcon({ className: "place", html: `<span>${place.name}</span>`, iconSize: [0, 0] }),
-      }).addTo(instance);
-    }
+    const sendView = () => {
+      const area = instance.getBounds();
+      reportView.current({ south: area.getSouth(), north: area.getNorth(), west: area.getWest(), east: area.getEast(), zoom: instance.getZoom() });
+    };
+    instance.on("moveend", sendView);
+    sendView();
 
     L.control.zoom({ position: "topright" }).addTo(instance);
-    instance.fitBounds(MAP_BOUNDS);
     // 창 크기가 바뀌면 Leaflet 좌표가 어긋나므로 다시 계산한다.
     const observer = new ResizeObserver(() => instance.invalidateSize());
     observer.observe(host.current);
@@ -169,11 +186,20 @@ export default function RestMap({
       buildings.current = null;
       outline.current = null;
     };
-  }, [cells]);
+  }, []);
 
   useEffect(() => {
-    heat.current?.setUrl(features ? featureImage(features) : heatImage(cells, scores));
-  }, [cells, scores, features]);
+    const overlay = heat.current;
+    if (!overlay) return;
+    if (features) {
+      overlay.setBounds(L.latLngBounds(HEAT_BOUNDS as L.LatLngTuple[]));
+      overlay.setUrl(featureImage(features));
+    } else if (cells.length) {
+      const image = heatImage(cells, scores, cellSize);
+      overlay.setBounds(L.latLngBounds(image.bounds));
+      overlay.setUrl(image.url);
+    }
+  }, [cells, cellSize, scores, features]);
 
   // 주거 탭에서는 선택할 수 있는 건물을 지도에 표시한다.
   useEffect(() => {
@@ -181,10 +207,9 @@ export default function RestMap({
     if (!layer) return;
     layer.clearLayers();
     if (!homes) return;
-    const renderer = L.canvas();
     for (const home of homes) {
       L.polygon(home.ring, {
-        renderer,
+        renderer: renderer.current!,
         interactive: false,
         color: "#101418",
         weight: 0.7,
@@ -247,7 +272,7 @@ export default function RestMap({
     if (!instance || !focusPoint) return;
     placeOnMap(instance, focusPoint, homes ? HOME_ZOOM : REST_ZOOM, placed.current);
     placed.current = true;
-  }, [focusPoint?.lat, focusPoint?.lng, homes]);
+  }, [focusPoint?.lat, focusPoint?.lng, Boolean(homes)]);
 
-  return <div ref={host} className="map" aria-label="안암동 쉼 지수 지도" />;
+  return <div ref={host} className="map" aria-label="서울 쉼 지수 지도" />;
 }

@@ -1,6 +1,6 @@
 export type Slot = "day" | "evening" | "night" | "dawn";
 export type Sense = "sound" | "light" | "crowd";
-export type Sensitivity = Record<Sense, number>;
+export type Sensitivity = Record<Sense, number> & { sun: number };
 export type Burden = Record<Sense, number>;
 
 export const SLOTS: { id: Slot; label: string; hour: string }[] = [
