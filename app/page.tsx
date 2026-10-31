@@ -3,16 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Dock, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
-import { HomeInputs, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
+import { DirectionDial, FloorInput, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
 import { GlassSheets, MainSheet } from "@/components/Sheets";
 import {
   adjustedLight,
   daylightScore,
-  formatDuration,
+  homeSummary,
+  homeTotal,
   nearestSensor,
+  sensorDaylight,
   sleepScore,
-  sleepVerdict,
+  homeVerdict,
+  SUN_WEIGHT,
   sunReport,
   type Building,
   type HomeInput,
@@ -58,6 +61,12 @@ import {
   type Slot,
 } from "@/lib/rest";
 import { useGlideScroll } from "@/lib/use-glide-scroll";
+
+// 역지오코딩 주소의 "안암동 안암동3가"처럼 겹치는 말과 건물 이름을 뺀다.
+function tidyAddress(address: string, name?: string | null) {
+  const parts = address.split(" ").filter((part) => part !== name);
+  return parts.filter((part, i) => !parts[i + 1]?.startsWith(part)).join(" ");
+}
 
 const RestMap = dynamic(() => import("@/components/RestMap"), { ssr: false });
 
@@ -270,22 +279,19 @@ export default function Home() {
 
   const lightOff = !isHome && slot === "day";
   const live = Boolean(API_BASE && grid);
-  const hasStatus = (value: string) => grid?.features.some((f) => f.properties.data_status === value);
-  const isDemo = live && (grid?.meta?.data_mode === "mock" || hasStatus("mock"));
-  const badge = isDemo ? "데모 데이터" : "추정 데이터";
 
   // 지금 정보를 보여 줄 대상: 주거 건물, 추천 장소, 직접 고른 위치 중 하나다.
   const found = lookup?.key === lookupKey ? lookup : null;
   const looking = "주소를 찾는 중";
   const missing = "";
-  const foundAddress = found ? found.address ?? missing : looking;
+  const foundAddress = found ? tidyAddress(found.address ?? missing, found.name) : looking;
   const target = isHome
     ? {
         title: home.name ?? found?.name ?? home.type,
         line: `${home.type} · ${homeCell.area} 인근`,
         cell: homeCell,
         facts: [
-          { label: "주소", value: home.address ?? foundAddress },
+          { label: "주소", value: home.address ?? tidyAddress(foundAddress, home.name) },
           { label: "규모", value: home.levels ? `지상 ${home.levels}층` : missing },
         ],
         website: undefined,
@@ -325,10 +331,22 @@ export default function Home() {
     [isHome, buildings, home, homeInput],
   );
   const homeResult = sleepOf(home, homeInput);
-  const apiNight = isHome ? details?.night?.comfort_score : undefined;
-  const score = target ? (isHome ? apiNight ?? homeResult.sleep : restScore(burden!, sensitivity)) : null;
+  const sleep = details?.night?.comfort_score ?? homeResult.sleep;
+  const sunPoint = report ? daylightScore(report.winter.minutes) : null;
+  const noiseDayPoint = Math.round(100 - homeCell.burdens.day.sound);
+  const noiseNightPoint = Math.round(100 - homeCell.burdens.night.sound);
+  const lightPoint = Math.round(100 - homeResult.light);
+  const crowdPoint = 100 - (homeCell.burdens.day.crowd + homeCell.burdens.night.crowd) / 2;
+  const homeParts = [
+    { name: "일조", score: sunPoint ?? 0, weight: SUN_WEIGHT },
+    { name: "소음", score: (noiseDayPoint + noiseNightPoint) / 2, weight: sensitivity.sound },
+    { name: "빛공해", score: lightPoint, weight: sensitivity.light },
+    { name: "혼잡", score: crowdPoint, weight: sensitivity.crowd },
+  ];
+  const total = sunPoint === null ? null : homeTotal(homeParts);
+  const score = target ? (isHome ? total : restScore(burden!, sensitivity)) : null;
   const scoreGrade = grade(score ?? 0);
-  const label = score === null ? "데이터 없음" : isHome ? sleepVerdict(score) : scoreGrade.label;
+  const label = score === null ? (isHome ? "계산 중" : "데이터 없음") : isHome ? homeVerdict(score) : scoreGrade.label;
   const detail = details?.night;
   const levelOf = (sense: Sense) => {
     if (!target || !burden) return "-";
@@ -343,12 +361,11 @@ export default function Home() {
 
   const sliders = <SensitivitySliders value={sensitivity} lightOff={lightOff} onChange={setSensitivity} />;
   const sheetScore = { value: score, label, color: scoreGrade.color };
-  const sunScore = report
-    ? { value: daylightScore(report.winter.minutes), label: `동지 직사광 ${formatDuration(report.winter.minutes)}`, color: "var(--ink)" }
-    : { value: null, label: "계산 중", color: "var(--muted)" };
-  const scoreTitle = isHome ? "내 감각 수면 점수" : `${hourLabel(hour)} 내 감각 쉼 지수`;
-  const causeBurden = isHome ? { ...target?.cell.burdens.night, crowd: 0 } : { ...burden, light: lightOff ? 0 : burden?.light };
-  const cause = target ? `가장 큰 부담 ${SENSE_LABEL[topSense(causeBurden as Burden, sensitivity)]}` : "";
+  const scoreTitle = isHome ? "내 감각 종합 점수" : `${hourLabel(hour)} 내 감각 쉼 지수`;
+  const restBurden = { ...burden, light: lightOff ? 0 : burden?.light } as Burden;
+  const cause = isHome
+    ? total === null ? undefined : homeSummary(homeParts)
+    : target ? `가장 큰 부담 ${SENSE_LABEL[topSense(restBurden, sensitivity)]}` : undefined;
 
   return (
     <>
@@ -369,7 +386,6 @@ export default function Home() {
       </div>
 
       <TopSwitch isHome={isHome} onChange={setTab} />
-      <p className={`badge glass ${isDemo ? "demo" : ""}`}>{badge}</p>
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
       {!up && (
@@ -397,16 +413,15 @@ export default function Home() {
         <GlassSheets isHome={isHome}>
           <MainSheet
             target={target}
-            scoreTitle={showDay ? "낮 햇빛 점수" : scoreTitle}
-            score={showDay ? sunScore : sheetScore}
-            secondary={isHome ? (showDay ? { label: "내 감각 수면 점수", value: score } : { label: "낮 햇빛 점수", value: sunScore.value }) : undefined}
-            cause={showDay ? undefined : cause}
+            scoreTitle={scoreTitle}
+            score={sheetScore}
+            cause={cause}
             up={up}
             emptyValues={[looking]}
             left={
               <>
                 {isHome && (
-                  <HomeInputs
+                  <FloorInput
                     input={homeInput}
                     maxFloor={Number(home.levels) || 30}
                     onChange={setHomeInput}
@@ -427,14 +442,25 @@ export default function Home() {
                     value={view}
                     onChange={setView}
                   />
-                  {showDay && <SunCard report={report} />}
+                  <div className="slot">
+                    {showDay ? (
+                      <SunCard
+                        report={report}
+                        score={sunPoint}
+                        dial={<DirectionDial input={homeInput} onChange={setHomeInput} />}
+                      />
+                    ) : (
+                      <LightCard level={level(homeResult.light)} score={lightPoint} sleep={sleep} />
+                    )}
+                  </div>
                   <NoiseCard
-                    slot={showDay ? "낮" : "심야"}
+                    isDay={showDay}
                     noise={target.cell.noiseDb[showDay ? "day" : "night"]}
                     crowd={level(target.cell.burdens[showDay ? "day" : "night"].crowd)}
+                    score={showDay ? noiseDayPoint : noiseNightPoint}
                     sensor={nearestSensor(home.lat, home.lng)}
+                    daylight={sensorDaylight(home.lat, home.lng)}
                   />
-                  {!showDay && <LightCard level={level(homeResult.light)} score={homeResult.light} />}
                 </>
               ) : (
                 <>

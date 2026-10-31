@@ -27,7 +27,6 @@ export function MainSheet({
   target,
   scoreTitle,
   score,
-  secondary,
   cause,
   up,
   emptyValues,
@@ -37,7 +36,6 @@ export function MainSheet({
   target: SheetTarget;
   scoreTitle: string;
   score: SheetScore;
-  secondary?: { label: string; value: number | null };
   cause?: string;
   up: boolean;
   emptyValues: string[];
@@ -45,7 +43,6 @@ export function MainSheet({
   side: ReactNode;
 }) {
   const open = () => document.querySelector(".sheet")?.scrollIntoView({ behavior: "smooth" });
-  const search = encodeURIComponent(target.title);
   const facts = target.facts.filter((fact) => fact.value);
   return (
     <section className="sheet">
@@ -54,7 +51,7 @@ export function MainSheet({
         <strong>{score.value ?? "-"}</strong>
         <em style={{ color: score.color }}>{score.label}</em>
       </button>
-      <div className="sheet-grid">
+      <div className={`sheet-grid ${up ? "" : "resting"}`}>
         <div className="module story">
           <div className="place-head">
             <p className="where">{target.line}</p>
@@ -71,17 +68,16 @@ export function MainSheet({
             ) : (
               <p className="no-facts">등록된 정보 없음</p>
             )}
-            <div className="links">
-              {target.website && <a href={target.website} target="_blank" rel="noreferrer">웹사이트</a>}
-              <a href={`https://map.naver.com/p/search/${search}`} target="_blank" rel="noreferrer">네이버 지도</a>
-              <a href={`https://map.kakao.com/?q=${search}`} target="_blank" rel="noreferrer">카카오맵</a>
-            </div>
+            {target.website && (
+              <div className="links">
+                <a href={target.website} target="_blank" rel="noreferrer">웹사이트</a>
+              </div>
+            )}
           </div>
           <div className="score-block">
             <p className="where">{scoreTitle}</p>
             <p className="score">{score.value ?? "-"}</p>
             <p className="verdict" style={{ color: score.color }}>{score.label}</p>
-            {secondary && <p className="secondary">{secondary.label} <b>{secondary.value ?? "-"}</b></p>}
             {cause && <p className="cause">{cause}</p>}
           </div>
           {left}

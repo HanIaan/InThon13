@@ -87,7 +87,7 @@ export function Dock({
   onPick: (place: string) => void;
 }) {
   return (
-    <div className="dock">
+    <div className={`dock ${showControls ? "" : "up"}`}>
       {showControls && (isHome ? (
         <p className="slots basis glass">건물을 눌러 선택</p>
       ) : (
