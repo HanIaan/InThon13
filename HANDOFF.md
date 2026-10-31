@@ -10,10 +10,12 @@
 | `feature/data-pipeline` | Claude (W1) | `b4405ea` | 완료 |
 | `feature/api-engine` | Claude (W2, Codex에서 인계) | `9bfdda4` | 완료 |
 | `feature/nasa-qa` | Claude (W3, Antigravity에서 인계) | `f5455c7` | 완료 (단독 실행 시 5 fail 정상: 구 mock) |
-| `integration/trial` (scratchpad worktree) | 조율자 | `9610f3e` | 241 passed |
+| `integration/trial` (scratchpad worktree) | 조율자 | `42b708e` | 241 passed |
+| `feature/noise-validation-lablup` | Lablup DeepSeek (W4) | `6a723ff` | 완료, 266 passed. B-Ridge 채택 후보 (엔진 미통합, 승인 대기) |
 
 - 에이전트 한도: Codex 주간 5% 남음(사용 금지 지시), Antigravity 한도 도달(2026-11-06경 리셋), Claude 사용 중.
-- Supabase: migration `202610310001_live_engine.sql` 적용됨, 엔진 테이블 **0행** (적재 미승인).
+- Supabase: migration `202610310001_live_engine.sql` 적용. **2026-10-31 20:03 KST 적재 완료** (승인됨, integration `42b708e` 코드·데이터, format_version 2). 행 수: grid_cells 15,685 / cell_indicators 188,220(=62,740×3) / sensors 1,169 / sdot_observations 168,625(위치 없는 92행 제외) / living_population 71,232 / admin_dong 424 / night_lights 7,800(QF2 1개는 원본 보존, 점수 미사용) / sensor_summaries 6,980 / source_metadata 3. SQLite 대비 표본 600행 불일치 0, RLS 11/11, GiST 5.
+- 로컬 live 서버(PostGIS): `cd <integration>/backend && ../.venv/bin/python <scratchpad>/run_live.py` (port 8001, DATABASE_URL은 .env.supabase에서 프로세스 내부로만 로드).
 - DB 접속정보: `feature/api-engine/backend/.env.supabase` (자동 로드 방지 위해 이름 변경). 승인된 DB 작업에서만 명시적으로 사용.
 - NASA 토큰: `feature/nasa-qa/backend/.env` (git 제외).
 - main: `79456d4 Initial commit` 그대로. 병합 순서(승인 후): 계약 → api-engine → data-pipeline → nasa-qa.
@@ -69,6 +71,10 @@ DATABASE_URL= ../.venv/bin/python -m app.services.precompute --local-only
 ### 실행 원칙
 - 다운로드·전처리·학습·평가는 일반 스크립트(`backend/app/modeling/`, `scripts/`)로 오프라인 실행. API 요청 시 외부 호출 없음.
 - 결과 표는 `docs/model-evaluation.md`, 작업마다 커밋하고 이 파일 갱신.
+
+## 4-1. 실측 대조로 확인된 한계 (2026-10-31)
+- KECO 서울 도로변 자동측정 8지점(2024 일평균 64.9~73.4 dB) 대비 현 IDW 낮 추정이 **평균 -21.8 dB**. 기간·측정방식(S-DoT AVG_NIS vs 측정망 Leq, 설치 높이)이 달라 절대 비교는 참고용이지만, 도로변 소음 과소추정이 큼 → W4 B 모델 및 측정 방식 확인 필요.
+- W4: B-Ridge CV MAE 5.73±0.23 vs A 6.93±0.36 dB (5/5 fold 개선), 도로변 7.48 vs 8.70. 외부 KECO n=8 Spearman A −0.12 / B 0.21 (표본이 작아 유의성 없음). 주거지 Spearman은 B 0.11 < A 0.16.
 
 ## 5. 후속 TODO (구현하지 않음)
 - 일조량: 건물 높이(국토부 건물통합정보/GIS건물), 태양 위치(pvlib), 그림자 투영으로 격자별 계절 일조시간 추정. 별도 지표로 계약 추가 필요.
