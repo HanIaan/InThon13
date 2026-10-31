@@ -426,6 +426,9 @@ export default function Home() {
           activeHome={isHome ? home : null}
           onSpot={chooseSpot}
           onPoint={chooseOnMap}
+          onHome={(found) => {
+            if (!up) chooseHome(found);
+          }}
           onView={setMapView}
         />
       </div>

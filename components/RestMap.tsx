@@ -23,6 +23,7 @@ type Props = {
   activeHome: Home | null;
   onSpot: (id: string) => void;
   onPoint: (point: Point) => void;
+  onHome?: (home: Home) => void;
   onView: (view: MapView) => void;
 };
 

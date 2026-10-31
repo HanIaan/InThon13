@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import type { GridFeature } from "@/lib/api";
-import type { Cell, Home, Recommendation } from "@/lib/data";
+import { inside, type Cell, type Home, type Recommendation } from "@/lib/data";
 import { featureImage, heatImage } from "@/lib/heat-image";
 import { loadKakao } from "@/lib/kakao";
 import type { MapView } from "@/lib/seoul";
@@ -25,6 +25,7 @@ type Props = {
   activeHome: Home | null;
   onSpot: (id: string) => void;
   onPoint: (point: Point) => void;
+  onHome?: (home: Home) => void;
   onView: (view: MapView) => void;
 };
 
@@ -34,6 +35,29 @@ const REST_LEVEL = 4;
 const HOME_LEVEL = 3;
 const MAX_LEVEL = 9;
 const HOME_CANVAS = 1600;
+// 건물을 고를 때 윤곽 밖으로 벗어나도 허용하는 화면 거리다.
+const PICK_PX = 14;
+const PINCH_STEP = 40;
+const PINCH_GAP_MS = 180;
+
+// 포인터가 건물 안에 있으면 그 건물을, 아니면 윤곽이 가장 가까운 건물을 고른다.
+function homeNear(homes: Home[], lat: number, lng: number, reach: number) {
+  const box = homes.filter((home) => Math.abs(home.lat - lat) < reach * 4 && Math.abs(home.lng - lng) < reach * 5);
+  const hit = box.find((home) => inside(lat, lng, home.ring));
+  if (hit) return hit;
+  let best: Home | null = null;
+  let closest = reach;
+  for (const home of box) {
+    for (const [ringLat, ringLng] of home.ring) {
+      const gap = Math.hypot(ringLat - lat, (ringLng - lng) * 0.79);
+      if (gap < closest) {
+        closest = gap;
+        best = home;
+      }
+    }
+  }
+  return best;
+}
 
 function homesImage(homes: Home[], view: MapView) {
   const canvas = document.createElement("canvas");
@@ -43,8 +67,8 @@ function homesImage(homes: Home[], view: MapView) {
   const x = (lng: number) => ((lng - view.west) / (view.east - view.west)) * canvas.width;
   const y = (lat: number) => ((view.north - lat) / (view.north - view.south)) * canvas.height;
   ctx.strokeStyle = "#101418";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-  ctx.lineWidth = 1;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+  ctx.lineWidth = 0.7;
   for (const home of homes) {
     ctx.beginPath();
     home.ring.forEach(([lat, lng], i) => (i ? ctx.lineTo(x(lng), y(lat)) : ctx.moveTo(x(lng), y(lat))));
@@ -115,15 +139,16 @@ export default function KakaoMap(props: Props) {
   return failed ? <FallbackMap {...props} /> : <KakaoLayer {...props} onFail={() => setFailed(true)} />;
 }
 
-function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onView, onFail }: Props & { onFail: () => void }) {
+function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const kit = useRef<{ kakao: any; map: any; heat: any; buildings: any } | null>(null);
   const pins = useRef<any[]>([]);
   const dot = useRef<any>(null);
   const outline = useRef<any>(null);
   const placed = useRef("");
-  const latest = useRef({ onPoint, onView, onSpot });
-  latest.current = { onPoint, onView, onSpot };
+  const latest = useRef({ onPoint, onHome, onView, onSpot, homes });
+  latest.current = { onPoint, onHome, onView, onSpot, homes };
+  const hover = useRef<any>(null);
   const view = useRef<MapView | null>(null);
   const redraw = useRef<() => void>(() => {});
 
@@ -154,7 +179,8 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, s
     const key = `${focusPoint.lat},${focusPoint.lng},${Boolean(homes)}`;
     if (placed.current === key) return;
     placed.current = key;
-    map.setLevel(homes ? HOME_LEVEL : REST_LEVEL);
+    const level = homes ? HOME_LEVEL : REST_LEVEL;
+    if (map.getLevel() > level) map.setLevel(level);
     const shift = openingShift(map, host.current);
     const projection = map.getProjection();
     const [width, height] = [host.current.clientWidth / 2, host.current.clientHeight / 2];
@@ -215,6 +241,7 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, s
   useEffect(() => {
     let alive = true;
     let observer: ResizeObserver | null = null;
+    let removePinch = () => {};
     loadKakao().then((kakao) => {
       if (!alive || !host.current) return;
       const map = new kakao.maps.Map(host.current, { center: new kakao.maps.LatLng(37.5865, 127.0295), level: REST_LEVEL });
@@ -236,7 +263,80 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, s
         latest.current.onView(view.current);
       };
       kakao.maps.event.addListener(map, "idle", send);
-      kakao.maps.event.addListener(map, "click", (e: any) => latest.current.onPoint({ lat: e.latLng.getLat(), lng: e.latLng.getLng() }));
+      const reach = () => {
+        const projection = map.getProjection();
+        const low = projection.coordsFromContainerPoint(new kakao.maps.Point(0, 0));
+        const high = projection.coordsFromContainerPoint(new kakao.maps.Point(0, PICK_PX));
+        return Math.abs(low.getLat() - high.getLat());
+      };
+      const under = (e: any) => {
+        const { homes: list } = latest.current;
+        return list?.length ? homeNear(list, e.latLng.getLat(), e.latLng.getLng(), reach()) : null;
+      };
+      kakao.maps.event.addListener(map, "mousemove", (e: any) => {
+        const found = under(e);
+        hover.current?.setMap(null);
+        hover.current = found
+          ? new kakao.maps.Polygon({
+              map,
+              path: found.ring.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng)),
+              strokeWeight: 2,
+              strokeColor: "#101418",
+              fillColor: "#101418",
+              fillOpacity: 0.28,
+              zIndex: 2,
+            })
+          : null;
+        map.setCursor(found ? "pointer" : "");
+      });
+      kakao.maps.event.addListener(map, "click", (e: any) => {
+        const { homes: list, onHome: pickHome, onPoint: pickPoint } = latest.current;
+        // 주거 화면에서 건물이 작게 보이면 먼저 그 자리를 확대한다.
+        if (list && map.getLevel() > HOME_LEVEL) {
+          map.setLevel(HOME_LEVEL, { anchor: e.latLng });
+          return;
+        }
+        const found = under(e);
+        if (found && pickHome) pickHome(found);
+        else pickPoint({ lat: e.latLng.getLat(), lng: e.latLng.getLng() });
+      });
+      // 트랙패드 핀치는 Ctrl 휠로 들어온다. 브라우저 확대 대신 지도를 포인터 기준으로 확대한다.
+      let pinch = 0;
+      let lastStep = 0;
+      const zoomAt = (clientX: number, clientY: number, step: number) => {
+        const box = host.current!.getBoundingClientRect();
+        const anchor = map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(clientX - box.left, clientY - box.top));
+        const level = Math.min(MAX_LEVEL, Math.max(1, map.getLevel() + step));
+        if (level !== map.getLevel()) map.setLevel(level, { anchor, animate: { duration: 160 } });
+      };
+      const onPinch = (e: WheelEvent) => {
+        if (!e.ctrlKey || document.querySelector(".dayview")) return;
+        e.preventDefault();
+        pinch += e.deltaY;
+        if (Math.abs(pinch) < PINCH_STEP || e.timeStamp - lastStep < PINCH_GAP_MS) return;
+        zoomAt(e.clientX, e.clientY, pinch > 0 ? 1 : -1);
+        pinch = 0;
+        lastStep = e.timeStamp;
+      };
+      // 사파리는 핀치를 제스처 이벤트로 보낸다.
+      const stopGesture = (e: Event) => {
+        if (!document.querySelector(".dayview")) e.preventDefault();
+      };
+      const onGesture = (e: Event) => {
+        stopGesture(e);
+        const { scale, clientX, clientY, timeStamp } = e as Event & { scale: number; clientX: number; clientY: number };
+        if (Math.abs(scale - 1) < 0.15 || timeStamp - lastStep < PINCH_GAP_MS * 2) return;
+        zoomAt(clientX, clientY, scale > 1 ? -1 : 1);
+        lastStep = timeStamp;
+      };
+      window.addEventListener("wheel", onPinch, { passive: false });
+      window.addEventListener("gesturestart", stopGesture, { passive: false });
+      window.addEventListener("gesturechange", onGesture, { passive: false });
+      removePinch = () => {
+        window.removeEventListener("wheel", onPinch);
+        window.removeEventListener("gesturestart", stopGesture);
+        window.removeEventListener("gesturechange", onGesture);
+      };
       observer = new ResizeObserver(() => map.relayout());
       observer.observe(host.current);
       redraw.current();
@@ -245,6 +345,7 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, s
     return () => {
       alive = false;
       observer?.disconnect();
+      removePinch();
       kit.current = null;
     };
   }, []);
