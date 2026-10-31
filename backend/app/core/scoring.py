@@ -22,7 +22,7 @@ from app.contracts.data_interfaces import CellIndicators, IndicatorValue
 
 # (best, worst): raw value at which the score is 100, and at which it is 0.
 NOISE_DB_RANGE = (40.0, 75.0)          # WHO night guideline ~40 dB; arterial road ~75 dB
-LIGHT_LUX_RANGE = (1.0, 100.0)         # S-DoT ambient lux after dark, log scale
+LIGHT_LUX_RANGE = (1.0, 100.0)         # S-DoT lux; legacy/mock only — live light scores use NASA radiance
 LIGHT_RADIANCE_RANGE = (5.0, 150.0)    # NASA Black Marble nW/cm²/sr, log scale
 CROWD_DENSITY_RANGE = (1_000.0, 60_000.0)  # living population persons/km², log scale
 
@@ -56,14 +56,19 @@ def indicator_score(indicator: Indicator, value: IndicatorValue, time_slot: Time
 
 
 def weights_for(scores: dict[Indicator, float | None], sens: dict[Indicator, int]) -> dict[Indicator, float]:
-    """Normalised weights over usable indicators. All-zero sensitivities -> equal weights."""
+    """Normalised weights. Only indicators the user selected (sensitivity > 0) AND that have
+    data are used, renormalised among themselves. If the user selected indicators but none
+    of them has data, all weights are 0 (-> comfort_score null): we never substitute other
+    senses for the one the user cares about. All-zero sensitivities -> equal weights over
+    indicators with data."""
     usable = [k for k, s in scores.items() if s is not None]
-    raw = {k: float(sens[k]) if k in usable else 0.0 for k in scores}
-    total = sum(raw.values())
-    if usable and total == 0:
-        raw = {k: (1.0 if k in usable else 0.0) for k in scores}
-        total = float(len(usable))
-    return {k: (v / total if total else 0.0) for k, v in raw.items()}
+    selected = [k for k in scores if sens[k] > 0]
+    if selected:
+        chosen = {k: float(sens[k]) for k in selected if k in usable}
+    else:
+        chosen = {k: 1.0 for k in usable}
+    total = sum(chosen.values())
+    return {k: (chosen.get(k, 0.0) / total if total else 0.0) for k in scores}
 
 
 def grade_for(score: float | None) -> Grade | None:
@@ -76,8 +81,9 @@ def grade_for(score: float | None) -> Grade | None:
     return Grade.C
 
 
-def combined_status(values: dict[Indicator, IndicatorValue], scores: dict[Indicator, float | None]) -> DataStatus:
-    used = [values[k].status for k, s in scores.items() if s is not None]
+def combined_status(values: dict[Indicator, IndicatorValue], weights: dict[Indicator, float]) -> DataStatus:
+    """Status of the indicators that actually contributed (weight > 0); none -> missing."""
+    used = [values[k].status for k, w in weights.items() if w > 0]
     if not used:
         return DataStatus.missing
     if DataStatus.mock in used:
@@ -95,7 +101,7 @@ class ScoredCell:
         values = {Indicator.noise: cell.noise, Indicator.light: cell.light, Indicator.crowd: cell.crowd}
         self.scores = {k: indicator_score(k, v, cell.time_slot) for k, v in values.items()}
         self.weights = weights_for(self.scores, sens)
-        usable = [k for k, s in self.scores.items() if s is not None]
+        usable = [k for k, w in self.weights.items() if w > 0]
         if usable:
             self.comfort_score = round(sum(self.weights[k] * self.scores[k] for k in usable), 1)
             self.confidence = round(sum(self.weights[k] * values[k].confidence for k in usable), 2)
@@ -103,4 +109,4 @@ class ScoredCell:
             self.comfort_score = None
             self.confidence = 0.0
         self.grade = grade_for(self.comfort_score)
-        self.data_status = combined_status(values, self.scores)
+        self.data_status = combined_status(values, self.weights)

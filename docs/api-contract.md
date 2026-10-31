@@ -33,10 +33,13 @@
 
 `sound_sensitivity`, `light_sensitivity`, `crowd_sensitivity`: 정수 0~5, 생략 시 3.
 
-- 가중치 = 각 민감도 / (사용 가능한 지표의 민감도 합)
-- 사용 가능한 지표의 민감도가 모두 0이면 → 균등 가중치
-- 데이터가 없는 지표(`null`)는 가중치 0, 나머지로 재정규화
-- 실제 적용된 가중치는 응답의 `weights` / `meta.weights`에 포함
+- **사용자가 선택한 지표**(민감도 > 0) 중 **데이터가 있는 지표만** 사용하고, 그들끼리 민감도 비율로 재정규화합니다.
+- 선택한 지표가 **모두 결측**이면 다른 지표로 대체하지 않습니다 → `comfort_score: null`, `grade: null`, `confidence: 0`, `data_status: "missing"`, 가중치 모두 0. 개별 지표 점수(`noise_score` 등)는 그대로 반환됩니다.
+  - 예: 빛 민감도만 5이고 NASA가 결측이면(또는 `day`면) 점수 `null`.
+  - 예: 소음 4·빛 5·혼잡 0이고 빛이 결측이면 소음만 100%로 계산.
+- 민감도가 **모두 0**이면 데이터가 있는 지표에 균등 가중치.
+- 격자 `data_status`는 실제로 점수에 반영된 지표들의 상태로 정해집니다.
+- 실제 적용된 가중치: inspect의 `weights`는 **해당 격자에 실제 적용된 값**입니다. grid/recommendations의 `meta.weights`는 해당 시간대에 세 지표가 모두 있는 격자를 가정한 **명목 가중치**이며, 지표가 결측인 격자는 남은 지표로 재정규화됩니다 (선택 지표가 모두 결측인 격자는 점수 `null`)
 
 ### `data_status`
 
@@ -48,7 +51,7 @@
 | `missing` | 사용할 수 있는 데이터 없음 |
 | `not_applicable` | 해당 시간대에 의미 없는 지표 (낮의 빛공해). 지표 단위에서만 사용 |
 
-격자 전체 `data_status`: 사용된 지표 중 하나라도 `mock`이면 `mock`, 모두 `observed`면 `observed`, 그 외 `estimated`, 사용 지표가 없으면 `missing`.
+격자 전체 `data_status`: 점수에 반영된 지표 중 하나라도 `mock`이면 `mock`, 모두 `observed`면 `observed`, 그 외 `estimated`, 사용 지표가 없으면 `missing`.
 
 ## 엔드포인트
 
@@ -83,9 +86,11 @@
 
 응답 주요 필드: `query`, `grid_id`, `grid_center` `[lng,lat]`, `grid_geometry`, `comfort_score`, `grade`, `confidence`, `data_status`, `weights`, `indicators.{noise,light,crowd}`, `notes[]`, `meta`.
 
-`indicators.<x>`: `score`, `raw_value`, `raw_unit`(`dB` / `lux` / `nW/cm2/sr` / `persons/km2`), `status`, `source`, `source_name`, `observed_at`, `period_start`, `period_end`, `method`(`direct`/`idw`/`areal_weighting`/`pixel_overlay`/`mock`), `nearby_sensors[]`(`sensor_id`, `coordinates`, `distance_m`, `raw_value`, `raw_unit`, `observed_at`), `note`.
+`indicators.<x>`: `score`, `raw_value`, `raw_unit`(`dB` / `lux` / `nW/cm2/sr` / `persons/km2`), `status`, `source`, `source_name`, `observed_at`, `period_start`, `period_end`, `method`(`direct` 센서 직접관측 / `idw` 센서 보간 / `pixel_overlay` 위성 픽셀 / `areal_weighting` 행정동 배분 / `mock`), `nearby_sensors[]`(`sensor_id`, `coordinates`, `distance_m`, `raw_value`, `raw_unit`, `observed_at`), `note`.
 
 서울 서비스 범위 밖 좌표 → `404 out_of_coverage`. 범위 안인데 데이터가 없으면 `200` + 모든 점수 `null`, `data_status: "missing"`.
+
+> 빛 지표: `raw_value`는 NASA 월간 방사휘도(`nW/cm2/sr`)이며 저녁·밤·새벽에 같은 값입니다. `nearby_sensors`에는 보조 근거인 S-DoT 조도(`lux`) 센서가 들어갑니다.
 
 > 반환값은 **건물 실측이 아닌 좌표 주변 200m 격자의 환경 추정**입니다 (`notes`에 명시).
 

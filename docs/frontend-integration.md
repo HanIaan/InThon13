@@ -114,7 +114,8 @@ rec.items.forEach((it) => console.log(it.rank, it.grade, it.comfort_score, it.ce
 | 상황 | 응답 | 프론트 처리 |
 | --- | --- | --- |
 | 격자에 데이터 없음 | 해당 feature 생략, 또는 `comfort_score: null`, `grade: null`, `data_status: "missing"` | 회색 또는 미표시 |
-| 지표 하나만 없음 | 해당 `*_score: null`, 나머지로 점수 계산 | "데이터 없음" 배지 |
+| 지표 하나만 없음 | 해당 `*_score: null`, 사용자가 선택한 나머지 지표로 점수 계산 | "데이터 없음" 배지 |
+| 선택한 감각의 데이터가 전부 없음 | `comfort_score: null`, `grade: null`, `data_status: "missing"` (개별 지표 점수는 있음) | "선택한 감각의 데이터 부족" 표시, 회색 |
 | 낮 시간대 빛 | `light_score: null`, inspect `status: "not_applicable"` | "야간 전용 지표" 안내 |
 | Mock 데이터 | `data_status: "mock"`, `meta.data_mode: "mock"` | "데모 데이터" 배지 **필수 표시** |
 | 추정값 | `data_status: "estimated"` | "추정" 배지, `confidence`로 투명도 |
