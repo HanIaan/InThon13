@@ -135,3 +135,31 @@ rec.items.forEach((it) => console.log(it.rank, it.grade, it.comfort_score, it.ce
 ## 8. 바뀌지 않는 것
 
 Mock → 실데이터 전환 시에도 URL·Query·응답 구조는 그대로입니다. 바뀌는 것은 `data_status`/`data_mode` 값과 수치뿐입니다.
+
+## 9. InThon13 프론트엔드(Next.js) 연결 체크리스트 (2026-10-31)
+
+`HanIaan/InThon13` main의 `lib/api.ts` 기준으로 확인한 사항입니다.
+
+| 항목 | 현재 프론트 | 백엔드 계약 | 조치 |
+| --- | --- | --- | --- |
+| Base URL | `NEXT_PUBLIC_API_BASE_URL` | 동일 | `.env.local`에 아래 주소 설정 |
+| 격자 | `GET /api/v1/grid` | 동일 | 그대로 사용 |
+| 좌표 상세 | `GET /api/v1/inspect` | **`GET /api/v1/location/inspect`** | `fetchInspect`의 경로 한 줄 변경 |
+| `DataStatus` 타입 | `"mock" \| "estimated" \| "measured" \| "missing"` | `"observed" \| "estimated" \| "mock" \| "missing"` (+ 지표 단위 `"not_applicable"`) | `"measured"` → `"observed"` |
+| 오류 코드 | `out_of_coverage`, `bbox_too_large`, `data_unavailable` 처리 | 동일 (+ `invalid_parameter`, `validation_error`) | 그대로 사용 |
+| CORS | `next dev` → `http://localhost:3000` | 기본 허용 | 다른 주소면 백엔드 `CORS_DEV_ORIGINS`에 추가 요청 |
+
+```bash
+# 프론트엔드 .env.local
+NEXT_PUBLIC_API_BASE_URL=https://<임시 터널 주소>.trycloudflare.com   # 백엔드 담당자가 전달
+# 백엔드를 같은 PC에서 직접 띄우는 경우
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+연결 확인 순서:
+1. `GET {BASE}/api/v1/health` → `status: "ok"`, `data_mode: "live"`, `data_ready: true`. 서버 재시작 직후 약 30초 동안은 `data_ready: false`일 수 있고, 그동안의 지도 요청은 로딩이 끝날 때까지 대기합니다.
+2. `GET {BASE}/api/v1/grid?bbox=126.95,37.54,127.02,37.59&time_slot=night&sound_sensitivity=3&light_sensitivity=3&crowd_sensitivity=3` → feature 약 928개.
+3. `GET {BASE}/api/v1/location/inspect?lat=37.4985&lng=127.0276&time_slot=night` (강남역) → `grid_id`, 지표별 `raw_value`·`method`·`period_*`, `notes`.
+4. 서울 밖(예: 부산, 성남) 클릭 → `404 out_of_coverage`.
+
+표시 원칙: 값은 **건물 실측이 아닌 200m 격자 환경 추정**입니다. 같은 격자 안 건물은 같은 점수가 나옵니다. `notes`를 그대로 보여 주세요.

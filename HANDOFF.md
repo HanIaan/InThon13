@@ -10,7 +10,7 @@
 | `feature/data-pipeline` | Claude (W1) | `b4405ea` | 완료 |
 | `feature/api-engine` | Claude (W2, Codex에서 인계) | `9bfdda4` | 완료 |
 | `feature/nasa-qa` | Claude (W3, Antigravity에서 인계) | `f5455c7` | 완료 (단독 실행 시 5 fail 정상: 구 mock) |
-| `integration/trial` (scratchpad worktree) | 조율자 | `42b708e` | 241 passed |
+| `integration/trial` (scratchpad worktree) | 조율자 | `0a78bc4` | 251 passed (W2f 포함, PostGIS live 재검증 완료) |
 | `feature/noise-validation-lablup` | Lablup DeepSeek (W4) | `6a723ff` | 완료, 266 passed. B-Ridge 채택 후보 (엔진 미통합, 승인 대기) |
 
 - 에이전트 한도: Codex 주간 5% 남음(사용 금지 지시), Antigravity 한도 도달(2026-11-06경 리셋), Claude 사용 중.
