@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, type PointerEvent, type ReactNode } from "react";
-import { PLACES } from "@/lib/data";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { searchPlaces, type SearchPlace } from "@/lib/kakao";
 import { hourLabel, SENSE_LABEL, slotOf, SLOTS, type Sense, type Sensitivity } from "@/lib/rest";
 
 const REST_SLIDERS: { id: keyof Sensitivity; label: string }[] = (["sound", "light", "crowd"] as Sense[]).map((id) => ({ id, label: SENSE_LABEL[id] }));
@@ -10,7 +10,7 @@ const HOME_SLIDERS: { id: keyof Sensitivity; label: string }[] = [
   { id: "light", label: SENSE_LABEL.light },
   { id: "sun", label: "일조량" },
 ];
-const PLACE_NAMES = PLACES.map((place) => place.name);
+const SEARCH_DELAY_MS = 250;
 
 export function SensitivitySliders({
   value,
@@ -121,6 +121,7 @@ export function Dock({
   onHour,
   onQuery,
   onPick,
+  onMiss,
 }: {
   isHome: boolean;
   showControls: boolean;
@@ -128,8 +129,35 @@ export function Dock({
   query: string;
   onHour: (hour: number) => void;
   onQuery: (query: string) => void;
-  onPick: (place: string) => void;
+  onPick: (place: SearchPlace) => void;
+  onMiss: () => void;
 }) {
+  const [results, setResults] = useState<SearchPlace[]>([]);
+
+  useEffect(() => {
+    const text = query.trim();
+    if (!text) {
+      setResults([]);
+      return;
+    }
+    let current = true;
+    const timer = window.setTimeout(() => {
+      searchPlaces(text).then((list) => {
+        if (current) setResults(list);
+      });
+    }, SEARCH_DELAY_MS);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  const choose = (place: SearchPlace) => {
+    onPick(place);
+    onQuery("");
+    setResults([]);
+  };
+
   return (
     <div className={`dock ${showControls ? "" : "up"}`}>
       {showControls && (isHome ? (
@@ -157,29 +185,32 @@ export function Dock({
       ))}
       <form
         className="search glass"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          if (PLACE_NAMES.includes(query)) {
-            onPick(query);
-            onQuery("");
-          }
+          // 입력 중 지연된 목록이 아니라 지금 입력한 글자로 찾는다.
+          const [first] = await searchPlaces(query.trim());
+          if (first) choose(first);
+          else if (query.trim()) onMiss();
         }}
       >
+        {results.length > 0 && (
+          <ul className="search-list glass">
+            {results.map((place) => (
+              <li key={`${place.name}${place.lat}`}>
+                <button type="button" onClick={() => choose(place)}>
+                  <b>{place.name}</b>
+                  {place.detail && <small>{place.detail}</small>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <input
-          list="places"
           value={query}
-          onChange={(e) => {
-            if (PLACE_NAMES.includes(e.target.value)) {
-              onPick(e.target.value);
-              onQuery("");
-            } else {
-              onQuery(e.target.value);
-            }
-          }}
-          placeholder="장소 검색"
-          aria-label="장소 검색"
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="주소나 장소 검색"
+          aria-label="주소나 장소 검색"
         />
-        <datalist id="places">{PLACE_NAMES.map((p) => <option key={p} value={p} />)}</datalist>
         <button type="submit">검색</button>
       </form>
     </div>

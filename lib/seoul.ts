@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SEED_CELLS, SEED_HOMES, SEED_SPOTS, type Cell, type Home, type Spot } from "./data";
+import { distanceMeters, inside, SEED_CELLS, SEED_HOMES, SEED_SPOTS, type Cell, type Home, type Spot } from "./data";
 import { addRoads, setSensors, type Building } from "./home-report";
 import type { Burden, Slot } from "./rest";
 
@@ -10,6 +10,8 @@ const SLOTS: Slot[] = ["day", "evening", "night", "dawn"];
 // 건물 타일은 약 500m 단위다. tools/build_app_buildings.py와 값을 맞춘다.
 const BUILDING_TILE = { lat: 0.0045, lng: 0.0057, south: 37.41, west: 126.76 };
 const HOME_TYPE: Record<number, string> = { 1: "단독주택", 2: "공동주택" };
+const BUILDING_SEARCH_M = 80;
+const SPOT_RING_DEG = 0.00005;
 
 export const SEOUL = { south: 37.42, north: 37.71, west: 126.75, east: 127.2 };
 export const DETAIL_ZOOM = 13;
@@ -86,6 +88,47 @@ function decodeHomes(key: string, rows: BuildingRow[]) {
     list.push({ id: `b${key}_${i}`, name: name || undefined, type: HOME_TYPE[kind], levels: floors ? String(floors) : undefined, address, ring, lat, lng });
   });
   return list;
+}
+
+// 검색한 좌표의 건물을 찾는다. 불러온 구역에 좌우되지 않도록 항상 주변 타일을 직접 읽는다.
+export async function buildingAt(place: Point & { name?: string; detail?: string; building?: string }): Promise<Home> {
+  const keys = tilesIn(around(place, 0.002), BUILDING_TILE);
+  const tiles = await Promise.all(keys.map(async (key) => ({ key, rows: await loadBuildingRows(key) })));
+  const list = tiles.flatMap(({ key, rows }) =>
+    rows.map(([floors, , flat, kind, name, address], i) => {
+      const ring = decodeRing(flat);
+      return {
+        ring,
+        lat: ring.reduce((sum, p) => sum + p[0], 0) / ring.length,
+        lng: ring.reduce((sum, p) => sum + p[1], 0) / ring.length,
+        id: `b${key}_${i}`,
+        name: name || undefined,
+        type: kind ? HOME_TYPE[kind] : "건물",
+        // 주거 건물 외에는 주소가 없어 같은 건물인지 알 수 없으므로 층수를 단정하지 않는다.
+        levels: kind && floors ? String(floors) : undefined,
+        address,
+      };
+    }),
+  );
+  // 큰 건물은 중심이 멀리 있어서 윤곽 꼭짓점까지의 거리로 비교한다.
+  const distanceTo = (home: (typeof list)[number]) => Math.min(...home.ring.map(([lat, lng]) => distanceMeters({ lat, lng }, place)));
+  const nearest = list
+    .map((home) => ({ home, meters: distanceTo(home) }))
+    .filter(({ meters }) => meters <= BUILDING_SEARCH_M)
+    .sort((a, b) => a.meters - b.meters || a.home.id.localeCompare(b.home.id));
+  const found = list.find((home) => inside(place.lat, place.lng, home.ring)) ?? nearest[0]?.home;
+  if (found) return { ...found, name: found.name ?? place.building ?? (found.address ? undefined : place.name), address: found.address ?? place.detail ?? place.name };
+  // 건물 윤곽이 없는 곳도 찾은 위치 자체는 볼 수 있게 한다.
+  const [dLat, dLng] = [SPOT_RING_DEG, SPOT_RING_DEG];
+  return {
+    id: `p${place.lat},${place.lng}`,
+    name: place.building ?? place.name,
+    type: "위치",
+    address: place.detail ?? place.name,
+    lat: place.lat,
+    lng: place.lng,
+    ring: [[place.lat - dLat, place.lng - dLng], [place.lat - dLat, place.lng + dLng], [place.lat + dLat, place.lng + dLng], [place.lat + dLat, place.lng - dLng], [place.lat - dLat, place.lng - dLng]],
+  };
 }
 
 export async function loadBuildings(point: Point, margin = 0.006): Promise<Building[]> {

@@ -24,7 +24,7 @@ const KM = { lat: 111, lng: 88 };
 const km = (aLat: number, aLng: number, bLat: number, bLng: number) =>
   Math.hypot((aLat - bLat) * KM.lat, (aLng - bLng) * KM.lng);
 
-function inside(lat: number, lng: number, poly: [number, number][]) {
+export function inside(lat: number, lng: number, poly: [number, number][]) {
   let hit = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const [ai, oi] = poly[i];
@@ -45,10 +45,6 @@ export function nearestToPoint(cells: Cell[], lat: number, lng: number, rangeKm 
     }
   }
   return best;
-}
-
-export function placePoint(name: string) {
-  return PLACES.find((place) => place.name === name) ?? null;
 }
 
 export type Home = {

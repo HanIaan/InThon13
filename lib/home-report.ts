@@ -191,9 +191,9 @@ export function sunReport(home: { lat: number; lng: number; ring: [number, numbe
 
 const hourOf = (date: Date) => (date.getUTCHours() + 9 + date.getUTCMinutes() / 60) % 24;
 
-// 소음 센서 측정 주간(2026-10-12~18)의 가운데 날 기준 일출·일몰이다.
+// 소음 센서 측정 기간(2026-10-05~18)의 가운데 날 기준 일출·일몰이다.
 export function sensorDaylight(lat: number, lng: number) {
-  const { sunrise, sunset } = getTimes(new Date("2026-10-15T12:00:00+09:00"), lat, lng);
+  const { sunrise, sunset } = getTimes(new Date("2026-10-12T12:00:00+09:00"), lat, lng);
   return { sunrise: hourOf(sunrise!), sunset: hourOf(sunset!) };
 }
 

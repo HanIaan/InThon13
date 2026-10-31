@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Dock, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
 import { DirectionDial, FloorInput, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
@@ -32,11 +32,9 @@ import {
 } from "@/lib/api";
 import {
   cellForHome,
-  distanceMeters,
   homeAtPoint,
   nearestHome,
   nearestToPoint,
-  placePoint,
   recommendSpots,
   SEED_HOMES,
   type Cell,
@@ -55,7 +53,8 @@ import {
   type Sensitivity,
   type Slot,
 } from "@/lib/rest";
-import { CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, OVERVIEW_SIZE, useSeoul, type MapView } from "@/lib/seoul";
+import { KAKAO_KEY, kakaoAddress, type SearchPlace } from "@/lib/kakao";
+import { buildingAt, CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, OVERVIEW_SIZE, useSeoul, type MapView } from "@/lib/seoul";
 import { useGlideScroll } from "@/lib/use-glide-scroll";
 
 // 역지오코딩 주소의 "안암동 안암동3가"처럼 겹치는 말과 건물 이름을 뺀다.
@@ -71,11 +70,10 @@ function homeTitle(home: HomePlace) {
   return [place, home.name].filter(Boolean).join(" ") || undefined;
 }
 
-const RestMap = dynamic(() => import("@/components/RestMap"), { ssr: false });
+const RestMap = dynamic(() => (KAKAO_KEY ? import("@/components/KakaoMap") : import("@/components/RestMap")), { ssr: false });
 const DayView = dynamic(() => import("@/components/DayView"), { ssr: false });
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
-const HOME_SEARCH_M = 1500;
 const DESIGN_WIDE = [1024, 760];
 const DESIGN_TALL = [390, 812];
 const MAX_UI_SCALE = 1.6;
@@ -103,11 +101,11 @@ export default function Home() {
   const [view, setView] = useState<"day" | "night">("day");
   const [dayOpen, setDayOpen] = useState(false);
   const [mapView, setMapView] = useState<MapView | null>(null);
-  const [pendingHome, setPendingHome] = useState<{ lat: number; lng: number } | null>(null);
+  const homeSearch = useRef(0);
 
   const isHome = tab === "home";
   const showDay = isHome && view === "day";
-  const { cells, homes, spots: allSpots, overview, anchorReady } = useSeoul(mapView, isHome ? pendingHome ?? home : point);
+  const { cells, homes, spots: allSpots, overview, anchorReady } = useSeoul(mapView, isHome ? home : point);
   const detailed = Boolean(mapView && mapView.zoom >= DETAIL_ZOOM);
   const heatCells = useMemo(() => {
     if (!mapView || !detailed) return overview.length ? overview : cells;
@@ -216,7 +214,7 @@ export default function Home() {
     const control = new AbortController();
     const key = lookupKey;
     setLookup(null);
-    reverseAddress(lookupPoint.lat, lookupPoint.lng, control.signal)
+    (KAKAO_KEY ? kakaoAddress(lookupPoint.lat, lookupPoint.lng) : reverseAddress(lookupPoint.lat, lookupPoint.lng, control.signal))
       .then((found) => setLookup({ key, ...found }))
       .catch(() => {
         if (!control.signal.aborted) setLookup({ key });
@@ -250,15 +248,6 @@ export default function Home() {
     }
   }, [anchorReady, homes]);
 
-  // 검색한 곳의 구역이 도착하면 가장 가까운 주거 건물을 고른다.
-  useEffect(() => {
-    if (!pendingHome || !anchorReady) return;
-    const nearest = nearestHome(homes, pendingHome.lat, pendingHome.lng);
-    if (distanceMeters(nearest, pendingHome) <= HOME_SEARCH_M) chooseHome(nearest);
-    else setToast("이 지역의 주거 건물 정보가 없어요");
-    setPendingHome(null);
-  }, [pendingHome, anchorReady, homes]);
-
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 2400);
@@ -290,11 +279,12 @@ export default function Home() {
     return () => observer.disconnect();
   });
 
-  function pick(name: string) {
-    const place = placePoint(name);
-    if (!place) return;
+  function pick(place: SearchPlace) {
     if (isHome) {
-      setPendingHome(place);
+      const request = ++homeSearch.current;
+      buildingAt(place).then((found) => {
+        if (request === homeSearch.current) chooseHome(found);
+      });
     } else {
       setPoint({ lat: place.lat, lng: place.lng });
       setPicked(true);
@@ -429,7 +419,7 @@ export default function Home() {
           scores={scores}
           features={live ? grid!.features : null}
           pinPoint={isHome ? null : point}
-          focusPoint={pendingHome ?? (target ? { lat: target.lat, lng: target.lng } : null)}
+          focusPoint={target ? { lat: target.lat, lng: target.lng } : null}
           spots={spots}
           activeSpot={active?.spot.id ?? null}
           homes={isHome ? visibleHomes : null}
@@ -460,7 +450,7 @@ export default function Home() {
         />
       )}
 
-      <Dock isHome={isHome} showControls={!up} hour={hour} query={query} onHour={setHour} onQuery={setQuery} onPick={pick} />
+      <Dock isHome={isHome} showControls={!up} hour={hour} query={query} onHour={setHour} onQuery={setQuery} onPick={pick} onMiss={() => setToast("검색 결과가 없어요")} />
 
       {target && (
         <GlassSheets isHome={isHome}>

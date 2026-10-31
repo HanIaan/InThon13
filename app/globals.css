@@ -114,6 +114,14 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .time-rail input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 
 .search { box-sizing: border-box; display: flex; gap: 6px; width: 100%; height: 54px; padding: 6px; border-radius: 999px; }
+.search { position: relative; }
+.search-list { position: absolute; right: 0; bottom: calc(100% + 8px); left: 0; z-index: 2; max-height: 300px; margin: 0; padding: 6px; overflow-y: auto; border-radius: 18px; list-style: none; }
+.search-list button { display: grid; width: 100%; padding: 8px 12px; border-radius: 12px; text-align: left; }
+.search-list button:hover { background: rgba(16, 20, 24, 0.07); }
+.search-list b { font-size: 14px; font-weight: 600; }
+.search-list small { color: var(--muted); font-size: 12px; }
+.map img[src*="mts.kakaocdn.net"] { filter: grayscale(0.85) brightness(1.05) contrast(0.82); }
+.map-dot { width: 18px; height: 18px; margin: -9px; background: #0b0d12; border: 3px solid #fff; border-radius: 50%; box-sizing: border-box; pointer-events: none; }
 .search input { flex: 1; min-width: 0; height: 38px; padding: 0 16px; background: none; border: 0; outline: 0; font-size: 15px; }
 .search input::placeholder { color: var(--muted); }
 .search button { padding: 0 19px; background: var(--ink); border-radius: 999px; color: #fff; font-size: 13px; font-weight: 600; }
