@@ -39,7 +39,7 @@ from statistics import mean
 from zoneinfo import ZoneInfo
 
 from pyproj import Transformer
-from shapely.geometry import Point, Polygon, box, mapping, shape
+from shapely.geometry import Point, box, shape
 from shapely.ops import transform, unary_union
 from shapely.strtree import STRtree
 
@@ -135,7 +135,7 @@ def population_fields(data, dong_geoms):
     return buckets
 
 
-def crowd_value(polygon, land_area, overlaps, population, slot):
+def crowd_value(land_area, overlaps, population, slot):
     parts = [(area, population[slot, code]) for code, area in overlaps if population.get((slot, code))]
     if not parts:
         return missing()
@@ -190,7 +190,7 @@ def _bounds(geometries):
     return tuple(unary_union(geometries).bounds) if geometries else None
 
 
-def source_metadata(data, fields, dong_geoms, now):
+def source_metadata(data, dong_geoms, now):
     """Counts are input rows, missing_rate is unusable input indicator values / total.
 
     Coverage and temporal bounds describe usable rows, not Seoul-wide coverage.
@@ -263,10 +263,10 @@ def build_snapshot(directory, max_distance_m=1000.0):
             light = missing(True) if slot == TimeSlot.day else fields[slot, "light"].value(ix, iy, max_distance_m)
             if slot in (TimeSlot.night, TimeSlot.dawn) and light.raw_value is None:
                 light = nasa
-            cells.append(CellIndicators(gid, slot, noise, light, crowd_value(polygon, land_area, overlaps, population, slot)))
+            cells.append(CellIndicators(gid, slot, noise, light, crowd_value(land_area, overlaps, population, slot)))
     if not grids:
         raise ValueError("no intersecting grid cells")
-    sources = source_metadata(data, fields, dong_geoms, datetime.now(KST))
+    sources = source_metadata(data, dong_geoms, datetime.now(KST))
     sensors = {(slot.value, ind): [r[0] for r in field.records] for (slot, ind), field in fields.items()}
     return Snapshot(cells, grids, sources, sensors), data
 
