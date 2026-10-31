@@ -104,12 +104,14 @@ def test_precompute_live_api(live):
     assert client.get("/api/v1/health").json()["data_ready"] is True
 
 
-def test_idw_cutoff_and_light_precedence(live):
+def test_idw_cutoff_and_light_is_nasa_only(live):
     client, *_ = live
     adjacent = inspect(client, IX+1).json()["indicators"]
     assert adjacent["noise"]["status"] == "estimated" and adjacent["noise"]["method"] == "idw"
     assert 50 < adjacent["noise"]["raw_value"] < 60
-    assert adjacent["light"]["raw_unit"] == "lux"
+    # Nearby S-DoT lux exists but no NASA pixel: light is missing, lux is evidence only.
+    assert adjacent["light"]["raw_value"] is None and adjacent["light"]["status"] == "missing"
+    assert {s["raw_unit"] for s in adjacent["light"]["nearby_sensors"]} == {"lux"}
     distant = inspect(client, IX+7).json()["indicators"]
     assert distant["noise"]["raw_value"] is None and distant["noise"]["status"] == "missing"
     assert distant["light"]["raw_value"] == pytest.approx(20)
@@ -117,8 +119,10 @@ def test_idw_cutoff_and_light_precedence(live):
     assert distant["light"]["status"] == "estimated" and distant["light"]["observed_at"] is None
     for slot in ("day", "evening"):
         light = inspect(client, IX+7, slot).json()["indicators"]["light"]
-        assert light["raw_value"] is None
-        assert light["status"] == ("not_applicable" if slot == "day" else "missing")
+        if slot == "day":
+            assert light["raw_value"] is None and light["status"] == "not_applicable"
+        else:
+            assert light["raw_value"] == pytest.approx(20) and light["method"] == "pixel_overlay"
     assert inspect(client, IX+7, "dawn").json()["indicators"]["light"]["raw_value"] == pytest.approx(20)
     assert inspect(client, slot="day").json()["weights"]["light"] == 0
 
@@ -228,7 +232,7 @@ def test_hourly_mean_does_not_sample_weight_and_uses_kst(tmp_path):
     assert value.raw_value == 50 and value.period_start.hour == 22
 
 
-def test_nasa_latest_quality_and_lux_priority(tmp_path):
+def test_nasa_latest_quality_over_lux(tmp_path):
     settings = make_processed(tmp_path)
     centre = grid.cell_center(IX, IY)
     rows = [NightLightRecord("pixel", *centre, .004167, "VNP46A3", date(2026, m, 1), date(2026, m, 28), value, qf)
@@ -236,11 +240,8 @@ def test_nasa_latest_quality_and_lux_priority(tmp_path):
     write_csv(tmp_path/"nasa_night_lights.csv", NightLightRecord, rows)
     snapshot = precompute(settings)
     cell = next(c for c in snapshot.cells if c.grid_id == grid.grid_id(IX,IY) and c.time_slot == TimeSlot.night)
-    assert cell.light.raw_value == 20 and cell.light.raw_unit == "lux"
-    (tmp_path/"sdot_observations.csv").unlink()
-    snapshot = precompute(settings)
-    cell = next(c for c in snapshot.cells if c.grid_id == grid.grid_id(IX,IY) and c.time_slot == TimeSlot.night)
-    assert cell.light.raw_value == pytest.approx(15)
+    # In-cell S-DoT lux is present but ignored; latest usable pixel (QF 2 month skipped) wins.
+    assert cell.light.raw_value == pytest.approx(15) and cell.light.raw_unit == "nW/cm2/sr"
     assert cell.light.period_start.month == 8 and cell.light.confidence <= .44
 
 

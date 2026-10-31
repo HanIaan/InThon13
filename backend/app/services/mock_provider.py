@@ -30,6 +30,8 @@ from app.core import grid
 
 KST = ZoneInfo("Asia/Seoul")
 MOCK_REFERENCE_DATE = datetime(2026, 10, 1, tzinfo=KST)
+# Light mirrors the live NASA VNP46A3 shape: one monthly value shared by evening/night/dawn.
+MOCK_LIGHT_PERIOD = (datetime(2026, 9, 1, tzinfo=KST), datetime(2026, 10, 1, tzinfo=KST))
 
 # (lng, lat, intensity, radius_deg) — synthetic busy centres.
 _HOTSPOTS = [
@@ -82,10 +84,18 @@ class MockProvider:
         noise = IndicatorValue(raw_value=round(noise_db, 1), raw_unit="dB", confidence=round(0.5 + 0.3 * _hash01(gid, "nc"), 2),
                                source=SourceId.sdot, **common)
 
+        lux = None
         if slot in LIGHT_APPLICABLE_SLOTS:
-            lux = (2 + 70 * u ** 1.5) * _SLOT_LUX_FACTOR[slot] * (0.7 + 0.6 * _hash01(gid, "l"))
-            light = IndicatorValue(raw_value=round(lux, 1), raw_unit="lux", confidence=round(0.45 + 0.3 * _hash01(gid, "lc"), 2),
-                                   source=SourceId.sdot, **common)
+            # Score value: synthetic monthly radiance, identical for every applicable slot.
+            radiance = (4 + 140 * u ** 1.5) * (0.7 + 0.6 * _hash01(gid, "l"))
+            light = IndicatorValue(raw_value=round(radiance, 1), raw_unit="nW/cm2/sr", status=DataStatus.mock,
+                                   confidence=round(0.35 + 0.2 * _hash01(gid, "lc"), 2), source=SourceId.nasa_black_marble,
+                                   method="mock", observed_at=None, period_start=MOCK_LIGHT_PERIOD[0],
+                                   period_end=MOCK_LIGHT_PERIOD[1],
+                                   note="데모용 합성 데이터입니다. 실제 측정값이 아닙니다. "
+                                        "월간 위성 야간 방사휘도(~463m)를 200m 격자에 면적 배분한 추정값 형태를 모사합니다.")
+            # Evidence only: synthetic S-DoT lux, never used for the score.
+            lux = (2 + 70 * u ** 1.5) * _SLOT_LUX_FACTOR[slot] * (0.7 + 0.6 * _hash01(gid, "lux"))
         else:
             light = IndicatorValue(raw_value=None, raw_unit=None, status=DataStatus.not_applicable, confidence=0.0,
                                    note="낮 시간대에는 빛공해 지표를 적용하지 않습니다.")
@@ -96,8 +106,8 @@ class MockProvider:
 
         if with_evidence_at:
             plng, plat = with_evidence_at
-            for ind, unit in ((noise, "dB"), (light, "lux")):
-                if ind.raw_value is None:
+            for ind, unit, base in ((noise, "dB", noise.raw_value), (light, "lux", lux)):
+                if base is None:
                     continue
                 for k in range(3):
                     slng = plng + 0.004 * (_hash01(gid, unit, k, "x") - 0.5)
@@ -106,7 +116,7 @@ class MockProvider:
                         sensor_id=f"MOCK-{gid[-9:]}-{k}", source=SourceId.sdot, name=f"Mock sensor {k + 1}",
                         lng=round(slng, 6), lat=round(slat, 6),
                         distance_m=round(grid.distance_m(plng, plat, slng, slat), 1),
-                        raw_value=round(ind.raw_value * (0.9 + 0.2 * _hash01(gid, unit, k)), 1), raw_unit=unit,
+                        raw_value=round(base * (0.9 + 0.2 * _hash01(gid, unit, k)), 1), raw_unit=unit,
                         observed_at=last,
                     ))
                 ind.evidence.sort(key=lambda e: e.distance_m)
@@ -135,8 +145,8 @@ class MockProvider:
                        spatial_resolution="행정동", update_frequency="daily",
                        notes="Mock 모드: 실제 생활인구 데이터가 아닙니다.", **common),
             SourceInfo(source_id=SourceId.nasa_black_marble, name="NASA Black Marble VNP46 (mock)", observation_count=0,
-                       spatial_resolution="15 arc-second (~460 m)", update_frequency="daily / monthly",
-                       notes="Mock 모드: 빛공해는 S-DoT 조도만 합성 사용합니다.", **common),
+                       spatial_resolution="15 arc-second (~463 m)", update_frequency="monthly (VNP46A3)",
+                       notes="Mock 모드: 빛 점수는 합성 월간 방사휘도(nW/cm2/sr)이며 S-DoT 조도(lux)는 근거로만 표시합니다.", **common),
         ]
 
     def precomputed_slots(self) -> list[TimeSlot]:

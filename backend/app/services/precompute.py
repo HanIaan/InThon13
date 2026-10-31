@@ -18,10 +18,13 @@ Rules (heuristics, not calibrated uncertainty probabilities):
   Unknown dong portions are not zero-filled. Confidence = 0.65 * available area /
   cell's administrative land area * min(1, hourly rows / expected slot hours).
   Supplied dong area is used when available, otherwise EPSG:5179 polygon area.
-* Light prefers usable S-DoT lux (direct or IDW). Only if unavailable, night/dawn
-  use NASA pixel-overlap-weighted radiance. Never mix lux with radiance or use
-  NASA for day/evening. Day is not_applicable. Pixel dates are preserved, with
-  no claim they resolve a particular hour. Only Mandatory_Quality_Flag 0/1 is
+* S-DoT quality_flag is a ';'-separated token list. noise_* tokens drop only the
+  noise value, light_* tokens only the lux value; any other token (no_valid_location,
+  duplicate_merged, unknown) drops the whole row.
+* Light (score) = NASA VNP46A3 pixel-overlap-weighted monthly radiance only, the same
+  value for evening/night/dawn; day is not_applicable. No NASA pixel -> missing; S-DoT
+  lux is never substituted and is kept only as click evidence (sensor summaries).
+  Pixel dates are preserved, with no claim they resolve a particular hour. Only Mandatory_Quality_Flag 0/1 is
   accepted; unknown/poor/fill quality is excluded. cloud_flag is retained in DB,
   not decoded here (ingestion owns product-specific cloud filtering).
   Latest period_end per pixel is selected; ties prefer shortest period then
@@ -45,7 +48,7 @@ from shapely.strtree import STRtree
 
 from app.config import get_settings
 from app.contracts.constants import (
-    DataStatus, SourceId, TimeSlot, TIME_SLOT_HOURS, GRID_ORIGIN_X,
+    DataStatus, LIGHT_APPLICABLE_SLOTS, SourceId, TimeSlot, TIME_SLOT_HOURS, GRID_ORIGIN_X,
     GRID_ORIGIN_Y, GRID_CELL_SIZE_M, hour_to_time_slot,
 )
 from app.contracts.data_interfaces import CellIndicators, EvidenceSensor, IndicatorValue, SourceInfo
@@ -58,7 +61,10 @@ PROJECT = Transformer.from_crs(4326, 5179, always_xy=True).transform
 
 
 def missing(day_light=False):
-    return IndicatorValue(None, None, DataStatus.not_applicable if day_light else DataStatus.missing, 0.0)
+    if day_light:
+        return IndicatorValue(None, None, DataStatus.not_applicable, 0.0,
+                              note="낮 시간대에는 빛공해 지표를 적용하지 않습니다.")
+    return IndicatorValue(None, None, DataStatus.missing, 0.0)
 
 
 def metric_cell(ix, iy):
@@ -104,17 +110,34 @@ class SensorField:
         )
 
 
+def flagged_indicators(quality_flag):
+    """Indicators excluded by a ';'-separated quality_flag; row-level/unknown tokens exclude both."""
+    excluded = set()
+    for token in (t.strip() for t in (quality_flag or "").split(";")):
+        if not token:
+            continue
+        prefix = token.split("_", 1)[0]
+        excluded |= {prefix} if prefix in ("noise", "light") else {"noise", "light"}
+    return excluded
+
+
+def usable_values(row):
+    """(indicator, value) pairs of an observation that survive its quality flags."""
+    excluded = flagged_indicators(row.quality_flag)
+    return [(ind, value) for ind, value in (("noise", row.noise_db), ("light", row.illuminance_lux))
+            if ind not in excluded and value is not None and value >= 0]
+
+
 def sensor_fields(data):
     locations = {s.sensor_id: s for s in data.sensors}
     buckets = defaultdict(list)
     for row in data.observations:
-        if row.quality_flag or row.sensor_id not in locations:
+        if row.sensor_id not in locations:
             continue
         stamp = row.observed_at.astimezone(KST)
         slot = hour_to_time_slot(stamp.hour)
-        for ind, value in (("noise", row.noise_db), ("light", row.illuminance_lux)):
-            if value is not None and value >= 0:
-                buckets[slot, ind, row.sensor_id].append((value, stamp, row.sample_count))
+        for ind, value in usable_values(row):
+            buckets[slot, ind, row.sensor_id].append((value, stamp, row.sample_count))
     records = defaultdict(list)
     for (slot, ind, sid), rows in buckets.items():
         s = locations[sid]
@@ -182,7 +205,7 @@ class PixelField:
             source=SourceId.nasa_black_marble, method="pixel_overlay",
             period_start=datetime.combine(start, time.min, KST),
             period_end=datetime.combine(end + timedelta(days=1), time.min, KST),
-            note="S-DoT 조도 부재 시 NASA 야간 픽셀 대체값; 시간대별 직접 관측이 아닙니다. 관측 시각은 미제공.",
+            note="월간 위성 야간 방사휘도(~463m)를 200m 격자에 면적 배분한 추정값; 저녁·밤·새벽 동일 값이며 관측 시각은 미제공.",
         )
 
 
@@ -199,9 +222,9 @@ def source_metadata(data, dong_geoms, now):
     """
     output = []
     valid_ids = {s.sensor_id for s in data.sensors}
-    valid_obs = [r for r in data.observations if not r.quality_flag and r.sensor_id in valid_ids]
-    usable_values = sum(v is not None and v >= 0 for r in valid_obs for v in (r.noise_db, r.illuminance_lux))
-    valid_obs = [r for r in valid_obs if any(v is not None and v >= 0 for v in (r.noise_db, r.illuminance_lux))]
+    valid_obs = [r for r in data.observations if r.sensor_id in valid_ids]
+    usable_count = sum(len(usable_values(r)) for r in valid_obs)
+    valid_obs = [r for r in valid_obs if usable_values(r)]
     ids = {r.sensor_id for r in valid_obs}
     obs_times = [r.observed_at.astimezone(KST) for r in valid_obs]
     valid_pop = [r for r in data.population if r.dong_code in dong_geoms]
@@ -209,8 +232,8 @@ def source_metadata(data, dong_geoms, now):
     pop_codes = {r.dong_code for r in valid_pop}
     valid_lights = [r for r in data.lights if usable_pixel(r)]
     configs = [
-        (SourceId.sdot, "서울 S-DoT 도시데이터 센서", len(data.observations), usable_values, 2 * len(data.observations),
-         [Point(s.lng, s.lat) for s in data.sensors if s.sensor_id in ids], obs_times, "point sensors", "유효 소음/조도 값 비율; 품질 플래그·위치 없는 관측 제외"),
+        (SourceId.sdot, "서울 S-DoT 도시데이터 센서", len(data.observations), usable_count, 2 * len(data.observations),
+         [Point(s.lng, s.lat) for s in data.sensors if s.sensor_id in ids], obs_times, "point sensors", "유효 소음/조도 값 비율; 지표별 품질 플래그(noise_*/light_*)와 행 단위 플래그·위치 없는 관측 제외. 조도(lux)는 점수 미사용 보조 근거"),
         (SourceId.living_population, "서울 생활인구", len(data.population), len(valid_pop), len(data.population),
          [shape(f["geometry"]) for f in data.boundaries if f["properties"]["dong_code"] in pop_codes], pop_times,
          "행정동", "경계와 결합 가능한 생활인구 행 비율"),
@@ -260,9 +283,8 @@ def build_snapshot(directory, max_distance_m=1000.0):
         nasa = pixels.value(polygon)
         for slot in TimeSlot:
             noise = fields[slot, "noise"].value(ix, iy, max_distance_m)
-            light = missing(True) if slot == TimeSlot.day else fields[slot, "light"].value(ix, iy, max_distance_m)
-            if slot in (TimeSlot.night, TimeSlot.dawn) and light.raw_value is None:
-                light = nasa
+            # One monthly NASA value for every applicable slot; S-DoT lux never enters the score.
+            light = missing(True) if slot not in LIGHT_APPLICABLE_SLOTS else replace(nasa)
             cells.append(CellIndicators(gid, slot, noise, light, crowd_value(land_area, overlaps, population, slot)))
     if not grids:
         raise ValueError("no intersecting grid cells")

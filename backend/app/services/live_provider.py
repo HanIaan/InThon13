@@ -16,7 +16,7 @@ from pyproj import Transformer
 from shapely.geometry import Point
 from shapely.strtree import STRtree
 
-from app.contracts.constants import SourceId, TimeSlot
+from app.contracts.constants import LIGHT_APPLICABLE_SLOTS, SourceId, TimeSlot
 from app.contracts.data_interfaces import SourceInfo
 from app.contracts.errors import ApiError, ErrorCode
 from app.db.snapshot import SNAPSHOT_NAME, read_snapshot
@@ -86,7 +86,13 @@ class LiveProvider:
         values = {}
         for ind in ("noise", "light", "crowd"):
             value = getattr(cell, ind)
-            nearby = self._nearby(time_slot, ind, lng, lat) if value.source == SourceId.sdot else list(value.evidence)
+            if ind == "light":
+                # Light is scored from NASA only; nearby S-DoT lux is supporting evidence.
+                nearby = self._nearby(time_slot, ind, lng, lat) if time_slot in LIGHT_APPLICABLE_SLOTS else []
+            elif value.source == SourceId.sdot:
+                nearby = self._nearby(time_slot, ind, lng, lat)
+            else:
+                nearby = list(value.evidence)
             values[ind] = replace(value, evidence=nearby)
         return replace(cell, **values)
 
