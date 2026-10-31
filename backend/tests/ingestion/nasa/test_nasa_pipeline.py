@@ -27,6 +27,16 @@ from app.ingestion.nasa.hdf5_reader import BlackMarbleHDF5
 from app.ingestion.nasa.run import parse_args, run
 
 
+@pytest.fixture
+def no_earthdata_token(monkeypatch):
+    """Hide any real Earthdata token (env var or backend/.env) so tests are environment-independent."""
+    from app.config import Settings
+
+    monkeypatch.delenv("NASA_EARTHDATA_TOKEN", raising=False)
+    empty = Settings(_env_file=None, nasa_earthdata_token=None)
+    monkeypatch.setattr("app.config.get_settings", lambda: empty)
+
+
 def _create_synthetic_seoul_hdf5(file_path: Path, product: str = "VNP46A3", tile: str = "h30v05") -> Path:
     """Test fixture helper: create synthetic HDF5 file covering Seoul tile h30v05."""
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,8 +108,7 @@ class TestClientTileGrid:
         with pytest.raises(ValueError, match="out of WGS84 range"):
             tile_for_coords(127.0, -95.0)
 
-    def test_download_granule_requires_token(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("NASA_EARTHDATA_TOKEN", raising=False)
+    def test_download_granule_requires_token(self, no_earthdata_token, tmp_path):
         out_file = tmp_path / "test.h5"
         with pytest.raises(ValueError, match="NASA_EARTHDATA_TOKEN is required"):
             download_granule("https://ladsweb.modaps.eosdis.nasa.gov/archive/test.h5", out_file, token=None)
@@ -337,9 +346,8 @@ class TestSyntheticSeoulRunner:
         assert min(valid_rads) >= 5.0
         assert max(valid_rads) <= 150.0
 
-    def test_cli_run_without_token_fails_cleanly(self, tmp_path, monkeypatch):
+    def test_cli_run_without_token_fails_cleanly(self, tmp_path, monkeypatch, no_earthdata_token):
         """When no token is present and no input-file is given, run must fail without creating output."""
-        monkeypatch.delenv("NASA_EARTHDATA_TOKEN", raising=False)
         # Mock get_latest_granule so offline tests don't require internet
         fake_granule = GranuleInfo(
             producer_granule_id="VNP46A3.A2026244.h30v05.002.2026291122007.h5",
