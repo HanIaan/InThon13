@@ -567,7 +567,6 @@ export default function Home() {
         <SpotsPanel
           area={pointCell.area}
           time={hourLabel(hour)}
-          picked={picked ? { name: found?.name ?? "선택한 위치", detail: found?.address ?? `${pointCell.area} 인근`, score } : null}
           spots={spots}
           activeId={active?.spot.id ?? null}
           burdenOf={(item) => {

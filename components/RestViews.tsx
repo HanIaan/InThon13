@@ -10,8 +10,6 @@ const PUSH_OUT_RATIO = 0.3;
 
 export type Offset = { x: number; y: number };
 
-type PickedPlace = { name: string; detail: string; score: number | null };
-
 // 마우스로도 카드 줄을 잡아 끌어 넘길 수 있게 한다. 끌었으면 손을 뗄 때의 클릭은 무시한다.
 // 터치는 브라우저 기본 가로 스크롤이 맡는다.
 function useDragScroll() {
@@ -61,7 +59,6 @@ function useDragScroll() {
 export function SpotsPanel({
   area,
   time,
-  picked,
   spots,
   activeId,
   burdenOf,
@@ -74,7 +71,6 @@ export function SpotsPanel({
 }: {
   area: string;
   time: string;
-  picked: PickedPlace | null;
   spots: Recommendation[];
   activeId: string | null;
   burdenOf: (item: Recommendation) => Record<Sense, number | null>;
@@ -127,18 +123,6 @@ export function SpotsPanel({
         <p>{area} 주변 · {time}</p>
       </header>
       <ol {...dragScroll}>
-        {picked && (
-          <li>
-            <button className="on">
-              <i aria-hidden="true">●</i>
-              <span>
-                <b>{picked.name}</b>
-                <small>{picked.detail}</small>
-              </span>
-              <strong>{picked.score ?? "-"}</strong>
-            </button>
-          </li>
-        )}
         {spots.map((item) => {
           const { spot, rank, score, meters } = item;
           const active = spot.id === activeId;
