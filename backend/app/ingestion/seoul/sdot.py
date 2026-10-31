@@ -12,7 +12,12 @@ Verified source facts (2026-10-31):
   행정동 is derived by point-in-polygon on the 2016 boundaries (same code system as 생활인구).
 
 Quality flags (``quality_flag``; ``;``-joined tokens, ``None`` = no issue). Values are never
-removed or altered by a flag:
+removed or altered by a flag. **Scope is encoded in the token prefix** (engine contract):
+- ``noise_*`` tokens invalidate only ``noise_db``; ``light_*`` tokens invalidate only
+  ``illuminance_lux``. A light problem never discards a valid noise value and vice versa.
+- Row-level tokens (no prefix) apply to the whole row: only ``no_valid_location`` and
+  ``duplicate_merged`` (ROW_FLAGS). Every emitted token is in ALL_FLAGS (enforced by tests).
+
 - ``noise_out_of_range``: AVG noise outside [NOISE_MIN_DB, NOISE_MAX_DB]
 - ``light_out_of_range``: AVG lux outside [LUX_MIN, LUX_MAX]
 - ``noise_inconsistent_minmax`` / ``light_inconsistent_minmax``: not MIN <= AVG <= MAX
@@ -27,22 +32,36 @@ removed or altered by a flag:
   commercial frontages and plazas reach a few hundred lux; 1,000 lux is overcast-daylight level
   and cannot be produced outdoors at night. Such readings (e.g. 21,763 lux at 00:00) indicate a
   lamp/LED directly on the sensor, reflection or a fault, and would contaminate interpolation.
-- ``duplicate_merged``: several differing rows for one sensor-hour were averaged
-- ``no_valid_location``: the sensor has no valid Seoul coordinate in the location file
+- ``light_always_zero``: every non-missing lux reading of the sensor in the processed period is
+  exactly 0 and it has >= ALWAYS_ZERO_MIN_MIDDAY readings at 10:00-15:59 KST (at least one full
+  midday). A working outdoor sensor cannot read 0 lux at noon -> sensor covered/broken; all its
+  rows get the flag.
+- ``light_zero_daytime``: lux == 0 at MIDDAY_HOURS (10:00-15:59 KST) for a sensor that is not
+  always-zero. Even heavy overcast gives >= ~1,000 lux outdoors at midday and the sun is high in
+  every season in Seoul (winter solar noon elevation ~29 deg), so 0 there means the light sensor
+  is covered/shaded/faulty at that hour, regardless of weather (no cloud data needed).
+- Zero lux outside 10-15h (evening/night/dawn, early morning, late afternoon) is NOT flagged:
+  darkness and the sensor's lower detection limit are real observations. Classification per
+  sensor (``classify_lux_zero``, reported in sdot_lux_zero_report.csv): ``no_lux``, ``no_zero``,
+  ``dark_hours_zero`` (zeros only outside midday, positive midday readings -> normal),
+  ``daytime_zero`` (some midday zeros -> those rows flagged), ``always_zero`` (flagged),
+  ``zero_unverified`` (zeros but no positive/insufficient midday readings -> not flagged; can't tell).
+- ``duplicate_merged``: several differing rows for one sensor-hour were averaged (row-level)
+- ``no_valid_location``: the sensor has no valid Seoul coordinate in the location file (row-level)
 """
 from __future__ import annotations
 
 import csv
 import io
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from app.contracts.constants import DataStatus, SourceId
+from app.contracts.constants import TIME_SLOT_HOURS, DataStatus, SourceId
 from app.contracts.data_interfaces import SensorLocation, SensorObservation
 
 from .admin_dong import DongIndex
@@ -73,6 +92,24 @@ NOISE_STUCK_HOURS = 12
 LUX_STUCK_HOURS = 24
 NIGHT_LUX_MAX = 1_000.0
 NIGHT_HOURS = frozenset({19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5})  # KST, after sunset .. before sunrise
+MIDDAY_HOURS = frozenset(range(10, 16))  # 10:00-15:59 KST
+ALWAYS_ZERO_MIN_MIDDAY = 6  # >= one full midday of evidence before calling a sensor always-zero
+LUX_ZERO_REPORT_FILE = "sdot_lux_zero_report.csv"
+
+NOISE_FLAGS = frozenset({"noise_out_of_range", "noise_inconsistent_minmax", "noise_stuck_value"})
+LIGHT_FLAGS = frozenset({
+    "light_out_of_range", "light_inconsistent_minmax", "light_stuck_value", "light_night_implausible",
+    "light_always_zero", "light_zero_daytime",
+})
+ROW_FLAGS = frozenset({"no_valid_location", "duplicate_merged"})
+ALL_FLAGS = NOISE_FLAGS | LIGHT_FLAGS | ROW_FLAGS
+
+
+def flag_affects(token: str, indicator: str) -> bool:
+    """True if ``token`` invalidates ``indicator`` ("noise" | "light")."""
+    if token in ROW_FLAGS:
+        return True
+    return token.startswith(f"{indicator}_")
 
 # Open API output order == weekly CSV column order (the CSV has Korean headers and up to
 # 6 trailing empty fields per data row).
@@ -284,9 +321,12 @@ class ObservationStats:
     flagged: int = 0
     period_start: datetime | None = None
     period_end: datetime | None = None
+    lux_zero_classes: dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         d = dict(self.__dict__)
+        classes = d.pop("lux_zero_classes")
+        d["lux_zero_sensor_classes"] = dict(sorted(Counter(classes.values()).items()))
         d["noise_missing_rate"] = round(self.noise_missing / self.rows, 4) if self.rows else None
         d["lux_missing_rate"] = round(self.lux_missing / self.rows, 4) if self.rows else None
         for k in ("period_start", "period_end"):
@@ -345,6 +385,15 @@ def build_observations(
             merged[(sn, hour)][2].add("noise_stuck_value")
         for hour in _stuck_hours([(h, r.lux) for h, r in series], LUX_STUCK_HOURS):
             merged[(sn, hour)][2].add("light_stuck_value")
+        cls = classify_lux_zero([(h, r.lux) for h, r in series])
+        st.lux_zero_classes[sn] = cls
+        for h, r in series:
+            if r.lux != 0.0:
+                continue
+            if cls == "always_zero":
+                merged[(sn, h)][2].add("light_always_zero")
+            elif cls == "daytime_zero" and h.astimezone(KST).hour in MIDDAY_HOURS:
+                merged[(sn, h)][2].add("light_zero_daytime")
 
     out: list[SensorObservation] = []
     for (sn, hour) in sorted(merged):
@@ -366,6 +415,57 @@ def build_observations(
         st.period_start = min(o.observed_at for o in out)
         st.period_end = max(o.observed_at for o in out)
     return out, st
+
+
+# ------------------------------------------------------------------ zero-lux analysis
+
+def classify_lux_zero(series: list[tuple[datetime, float | None]]) -> str:
+    """Per-sensor class of its 0-lux readings (see module docstring)."""
+    vals = [(h.astimezone(KST).hour, v) for h, v in series if v is not None]
+    if not vals:
+        return "no_lux"
+    zeros = [hr for hr, v in vals if v == 0.0]
+    if not zeros:
+        return "no_zero"
+    midday = [v for hr, v in vals if hr in MIDDAY_HOURS]
+    if len(zeros) == len(vals):
+        return "always_zero" if len(midday) >= ALWAYS_ZERO_MIN_MIDDAY else "zero_unverified"
+    if any(v == 0.0 for v in midday):
+        return "daytime_zero"
+    if any(v > 0 for v in midday):
+        return "dark_hours_zero"
+    return "zero_unverified"
+
+
+LUX_ZERO_REPORT_COLUMNS = ["sensor_id", "sensor_class", "time_slot", "lux_rows", "zero_rows", "zero_ratio"]
+
+
+def lux_zero_report(obs: list[SensorObservation], classes: dict[str, str]) -> list[dict[str, Any]]:
+    """Rows of sdot_lux_zero_report.csv: per sensor x time_slot (TIME_SLOT_HOURS) 0-lux ratio."""
+    slot_of = {h: slot.value for slot, hours in TIME_SLOT_HOURS.items() for h in hours}
+    counts: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0])
+    for o in obs:
+        if o.illuminance_lux is None:
+            continue
+        c = counts[(o.sensor_id, slot_of[o.observed_at.astimezone(KST).hour])]
+        c[0] += 1
+        c[1] += o.illuminance_lux == 0.0
+    out = []
+    for sn in sorted(classes):
+        for slot in TIME_SLOT_HOURS:
+            n, z = counts.get((sn, slot.value), (0, 0))
+            out.append({"sensor_id": sn, "sensor_class": classes[sn], "time_slot": slot.value,
+                        "lux_rows": n, "zero_rows": z, "zero_ratio": round(z / n, 4) if n else None})
+    return out
+
+
+def write_lux_zero_report(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=LUX_ZERO_REPORT_COLUMNS)
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: ("" if v is None else v) for k, v in r.items()})
 
 
 # ------------------------------------------------------------------ fetching
@@ -456,10 +556,12 @@ def run(
 
     obs, stats = build_observations(all_rows(), start, end, {s.sensor_id for s in sensors})
     write_records_csv(out_dir / OBSERVATIONS_FILE, SensorObservation, obs)
+    write_lux_zero_report(out_dir / LUX_ZERO_REPORT_FILE, lux_zero_report(obs, stats.lux_zero_classes))
     observed_days = {o.observed_at.date() for o in obs}
     result = {
         "sensors_file": str(out_dir / SENSORS_FILE),
         "observations_file": str(out_dir / OBSERVATIONS_FILE),
+        "lux_zero_report_file": str(out_dir / LUX_ZERO_REPORT_FILE),
         "requested": [start.isoformat(), end.isoformat()],
         "weekly_files": [f.filename for f, _, _ in selected],
         "api_used": api_used,
