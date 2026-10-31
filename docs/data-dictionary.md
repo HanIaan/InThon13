@@ -58,8 +58,25 @@
 | `noise_out_of_range` / `light_out_of_range` | 물리적으로 불가능한 범위의 값 |
 | `noise_stuck_value` | 소음 값이 12시간 이상 연속으로 같음 |
 | `light_stuck_value` | 조도 값이 24시간 이상 연속으로 같음 (가로등 아래 야간 고정값은 실제 현상이라 제외) |
+| `light_night_implausible` | 19:00~05:59에 1,000 lux 초과 (야외 야간에 물리적으로 불가능) |
+| `light_always_zero` | 기간 내 조도가 항상 0 (한낮 6시간 이상 포함) — 센서 고장/가림 |
+| `light_zero_daytime` | 한낮(10~15시)에 0 lux — 센서 가림/고장 의심 |
+| `noise_inconsistent_minmax` / `light_inconsistent_minmax` | 최소·최대·평균 값이 서로 모순 |
 | `duplicate_merged` | 같은 시각의 중복 행을 병합함 |
 | `no_valid_location` | 센서 위치 없음 또는 서울 범위 밖 |
+
+적용 범위: `noise_*` → 소음만, `light_*` → 조도만, `no_valid_location`·`duplicate_merged` → 행 전체.
+
+### S-DoT 0 lux 검증 (2026-10-12~18)
+
+| 센서 분류 | 센서 수 | 조도 행 | 0 lux 행 | 처리 |
+| --- | --- | --- | --- | --- |
+| 야간만 0, 낮에는 양수 (`dark_hours_zero`) | 442 | 72,481 | 30,495 | 실제 어두움/측정 하한 → **정상 관측 유지** |
+| 항상 0 (`always_zero`) | 107 | 17,596 | 17,596 | `light_always_zero` 플래그 |
+| 한낮에도 0 (`daytime_zero`) | 28 | 4,641 | 3,101 | 한낮 0 행 611개 `light_zero_daytime` 플래그 |
+| 0 없음 / 조도 미측정 / 판정 불가 | 272 / 224 / 1 | — | — | — |
+
+시간대별 0 lux 비율: day 14.6%, evening 37.9%, night 62.7%, dawn 65.2%. 상세: `data/processed/sdot_lux_zero_report.csv`. 조도는 보조 데이터라 점수에 쓰이지 않습니다.
 
 ## 4. 처리 파일 (수집 → 엔진 인터페이스)
 
@@ -72,6 +89,7 @@
 | `living_population.csv` | `LivingPopulationRecord` | data-pipeline |
 | `admin_dong_boundaries.geojson` | 행정동 경계 (`dong_code`, `dong_name`, `gu_name`) | data-pipeline |
 | `nasa_night_lights.csv` | `NightLightRecord` | nasa-qa |
+| `sdot_lux_zero_report.csv` (보조) | 센서×시간대 0 lux 비율 | data-pipeline |
 
 ## 5. 상태 값 규칙
 
