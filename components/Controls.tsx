@@ -39,6 +39,18 @@ export function SensitivitySliders({
   ));
 }
 
+export function LocateButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  return (
+    <button className="locate glass" onClick={onClick} disabled={busy} aria-label="내 위치 찾기" title="내 위치">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="6.5" />
+        <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
+        <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
+      </svg>
+    </button>
+  );
+}
+
 export function TopSwitch({ isHome, onChange }: { isHome: boolean; onChange: (tab: "rest" | "home") => void }) {
   return (
     <div className="switch glass" role="tablist" aria-label="보기 선택">

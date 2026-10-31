@@ -18,6 +18,7 @@ type Props = {
   scores: Map<string, number>;
   features: GridFeature[] | null;
   pinPoint: Point | null;
+  myPoint?: Point | null;
   focusPoint: Point | null;
   spots: Recommendation[];
   activeSpot: string | null;
@@ -136,11 +137,12 @@ export default function KakaoMap(props: Props) {
   return failed ? <FallbackMap {...props} /> : <KakaoLayer {...props} onFail={() => setFailed(true)} />;
 }
 
-function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
+function KakaoLayer({ cells, cellSize, scores, features, pinPoint, myPoint, focusPoint, spots, activeSpot, homes, activeHome, onSpot, onPoint, onHome, onView, onFail }: Props & { onFail: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const kit = useRef<{ kakao: any; map: any; heat: any; buildings: any } | null>(null);
   const pins = useRef<any[]>([]);
   const dot = useRef<any>(null);
+  const me = useRef<any>(null);
   const outline = useRef<any>(null);
   const placed = useRef("");
   const latest = useRef({ onPoint, onHome, onView, onSpot, homes });
@@ -165,6 +167,7 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, s
     place();
     pin();
     mark();
+    showMe();
     trace();
   };
   redraw.current = draw;
@@ -204,6 +207,17 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, s
       });
       return new kakao.maps.CustomOverlay({ map, position: new kakao.maps.LatLng(spot.lat, spot.lng), content: node, xAnchor: 0, yAnchor: 0, clickable: true, zIndex: active ? 5 : 4 });
     });
+  };
+
+  const showMe = () => {
+    const { current } = kit;
+    if (!current) return;
+    me.current?.setMap(null);
+    me.current = null;
+    if (!myPoint) return;
+    const node = document.createElement("div");
+    node.className = "map-me";
+    me.current = new current.kakao.maps.CustomOverlay({ map: current.map, position: new current.kakao.maps.LatLng(myPoint.lat, myPoint.lng), content: node, xAnchor: 0, yAnchor: 0, zIndex: 6 });
   };
 
   const mark = () => {
@@ -357,7 +371,7 @@ function KakaoLayer({ cells, cellSize, scores, features, pinPoint, focusPoint, s
 
   useEffect(() => {
     redraw.current();
-  }, [cells, cellSize, scores, features, homes, activeHome, spots, activeSpot, pinPoint, focusPoint?.lat, focusPoint?.lng]);
+  }, [cells, cellSize, scores, features, homes, activeHome, spots, activeSpot, pinPoint, myPoint, focusPoint?.lat, focusPoint?.lng]);
 
   return <div ref={host} className="map" aria-label="서울 쉼 지수 지도" />;
 }
