@@ -21,7 +21,53 @@ from app.ingestion.nasa.client import (
 )
 from app.ingestion.nasa.extract import extract_night_lights, save_records_to_csv
 from app.ingestion.nasa.hdf5_reader import BlackMarbleHDF5
-from app.ingestion.nasa.run import create_synthetic_seoul_hdf5, parse_args, run
+from app.ingestion.nasa.run import parse_args, run
+
+
+def _create_synthetic_seoul_hdf5(file_path: Path, product: str = "VNP46A3", tile: str = "h30v05") -> Path:
+    """Test fixture helper: create synthetic HDF5 file covering Seoul tile h30v05."""
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    rows, cols = 2400, 2400
+    radiance_data = np.full((rows, cols), 65535, dtype=np.uint16)
+    quality_data = np.full((rows, cols), 255, dtype=np.uint8)
+    cloud_data = np.full((rows, cols), 0, dtype=np.uint8)
+
+    lat_max = 40.0
+    lon_min = 120.0
+    pixel_size = 10.0 / 2400.0
+
+    r_min = int(np.floor((lat_max - SEOUL_BBOX[3]) / pixel_size))
+    r_max = int(np.floor((lat_max - SEOUL_BBOX[1]) / pixel_size))
+    c_min = int(np.floor((SEOUL_BBOX[0] - lon_min) / pixel_size))
+    c_max = int(np.floor((SEOUL_BBOX[2] - lon_min) / pixel_size))
+
+    for r in range(r_min, r_max + 1):
+        for c in range(c_min, c_max + 1):
+            lng = lon_min + (c + 0.5) * pixel_size
+            lat = lat_max - (r + 0.5) * pixel_size
+            dist_sq = (lng - 126.98) ** 2 + (lat - 37.56) ** 2
+            rad_val = 15.0 + 85.0 * np.exp(-dist_sq / (2 * 0.05**2))
+            h = (r * 31 + c * 17) % 100
+            qf = 0 if h < 90 else (2 if h < 95 else 255)
+            if qf == 255:
+                radiance_data[r, c] = 65535
+            else:
+                radiance_data[r, c] = int(np.clip(rad_val * 10.0, 0, 65534))
+            quality_data[r, c] = qf
+            cloud_data[r, c] = 0
+
+    with h5py.File(file_path, "w") as f:
+        grp = f.create_group("HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields")
+        ds_rad = grp.create_dataset("Gap_Filled_DNB_BRDF-Corrected_NTL", data=radiance_data)
+        ds_rad.attrs["scale_factor"] = 0.1
+        ds_rad.attrs["add_offset"] = 0.0
+        ds_rad.attrs["_FillValue"] = 65535
+        ds_qual = grp.create_dataset("Mandatory_Quality_Flag", data=quality_data)
+        ds_qual.attrs["_FillValue"] = 255
+        ds_cloud = grp.create_dataset("QF_Cloud_Mask", data=cloud_data)
+        ds_cloud.attrs["_FillValue"] = 255
+
+    return file_path
 
 
 class TestClientTileGrid:
@@ -222,32 +268,45 @@ class TestHDF5ReaderAndExtraction:
 
 
 class TestSyntheticSeoulRunner:
-    def test_create_synthetic_seoul_hdf5(self, tmp_path):
+    def test_extract_synthetic_seoul_hdf5(self, tmp_path):
         h5_path = tmp_path / "synthetic_seoul.h5"
-        create_synthetic_seoul_hdf5(h5_path, product="VNP46A3", tile="h30v05")
+        _create_synthetic_seoul_hdf5(h5_path, product="VNP46A3", tile="h30v05")
         assert h5_path.exists()
 
         records = extract_night_lights(h5_path, bbox=SEOUL_BBOX, tile="h30v05")
         assert len(records) > 0
-        # All records must have coordinates within SEOUL_BBOX
         for r in records:
             assert SEOUL_BBOX[0] <= r.lng <= SEOUL_BBOX[2]
             assert SEOUL_BBOX[1] <= r.lat <= SEOUL_BBOX[3]
 
-        # Valid radiance values should be within expected range for Seoul (5 to 150 nW/cm2/sr)
         valid_rads = [r.radiance for r in records if r.radiance is not None]
         assert len(valid_rads) > 0
         assert min(valid_rads) >= 5.0
         assert max(valid_rads) <= 150.0
 
-    def test_cli_run_synthetic_fallback(self, tmp_path, monkeypatch):
+    def test_cli_run_without_token_fails_cleanly(self, tmp_path, monkeypatch):
+        """When no token is present and no input-file is given, run must fail without creating output."""
         monkeypatch.delenv("NASA_EARTHDATA_TOKEN", raising=False)
         out_csv = tmp_path / "cli_output.csv"
         args = parse_args([
             "--product", "VNP46A3",
             "--month", "2026-09",
             "--output-file", str(out_csv),
-            "--synthetic-fallback",
+        ])
+        exit_code = run(args)
+        assert exit_code == 1
+        assert not out_csv.exists(), "No output file should be generated when token is missing"
+
+    def test_cli_run_with_input_file(self, tmp_path):
+        """When an input-file is given, run should process the file successfully."""
+        h5_path = tmp_path / "input_granule.h5"
+        _create_synthetic_seoul_hdf5(h5_path, product="VNP46A3", tile="h30v05")
+
+        out_csv = tmp_path / "cli_output.csv"
+        args = parse_args([
+            "--product", "VNP46A3",
+            "--input-file", str(h5_path),
+            "--output-file", str(out_csv),
         ])
         exit_code = run(args)
         assert exit_code == 0

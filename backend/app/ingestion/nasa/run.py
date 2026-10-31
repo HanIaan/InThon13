@@ -1,8 +1,11 @@
 """CLI runner for NASA Black Marble ingestion pipeline.
 
 Usage:
-    python -m app.ingestion.nasa.run --product VNP46A3 --month 2026-09
+    # With downloaded granule file:
     python -m app.ingestion.nasa.run --input-file data/raw/VNP46A3.A2026244.h30v05.002.h5
+
+    # With NASA_EARTHDATA_TOKEN in environment:
+    python -m app.ingestion.nasa.run --product VNP46A3 --month 2026-09
 """
 from __future__ import annotations
 
@@ -13,95 +16,12 @@ import sys
 from datetime import date
 from pathlib import Path
 
-import h5py
-import numpy as np
-
 from app.contracts.constants import SEOUL_BBOX
-from .client import get_earthdata_token
+from .client import build_archive_url, download_granule, get_earthdata_token
 from .extract import extract_night_lights, save_records_to_csv
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("nasa_ingestion")
-
-
-def create_synthetic_seoul_hdf5(
-    file_path: str | Path,
-    product: str = "VNP46A3",
-    tile: str = "h30v05",
-) -> Path:
-    """Create a realistic synthetic HDF5 file covering tile h30v05 for testing and offline execution.
-
-    Tile h30v05 covers lon: [120, 130], lat: [30, 40].
-    Seoul bbox is roughly lon: [126.76, 127.19], lat: [37.41, 37.72].
-    """
-    out_path = Path(file_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    rows, cols = 2400, 2400
-    # Create empty arrays
-    radiance_data = np.full((rows, cols), 65535, dtype=np.uint16)
-    quality_data = np.full((rows, cols), 255, dtype=np.uint8)
-    cloud_data = np.full((rows, cols), 0, dtype=np.uint8)
-
-    # Compute row/col bounds for Seoul
-    lat_max = 40.0
-    lon_min = 120.0
-    pixel_size = 10.0 / 2400.0
-
-    r_min = int(np.floor((lat_max - SEOUL_BBOX[3]) / pixel_size))  # ~547
-    r_max = int(np.floor((lat_max - SEOUL_BBOX[1]) / pixel_size))  # ~621
-    c_min = int(np.floor((SEOUL_BBOX[0] - lon_min) / pixel_size))  # ~1622
-    c_max = int(np.floor((SEOUL_BBOX[2] - lon_min) / pixel_size))  # ~1725
-
-    # Populate Seoul area with plausible nighttime radiance
-    # Outer green belt / outskirts: 5..15 nW/cm²/sr -> raw 50..150
-    # Downtown / commercial: 50..120 nW/cm²/sr -> raw 500..1200
-    for r in range(r_min, r_max + 1):
-        for c in range(c_min, c_max + 1):
-            lng = lon_min + (c + 0.5) * pixel_size
-            lat = lat_max - (r + 0.5) * pixel_size
-
-            # Distance from central Seoul (126.98, 37.56)
-            dist_sq = (lng - 126.98) ** 2 + (lat - 37.56) ** 2
-            # Base urban radiance in nW/cm²/sr
-            rad_val = 15.0 + 85.0 * np.exp(-dist_sq / (2 * 0.05**2))
-
-            # Quality: most high (0), some gap-filled (1), a few poor (2), rare fill (255)
-            h = (r * 31 + c * 17) % 100
-            if h < 85:
-                qf = 0
-            elif h < 95:
-                qf = 1
-            elif h < 98:
-                qf = 2
-            else:
-                qf = 255
-
-            if qf == 255:
-                radiance_data[r, c] = 65535
-            else:
-                radiance_data[r, c] = int(np.clip(rad_val * 10.0, 0, 65534))  # scale_factor = 0.1
-
-            quality_data[r, c] = qf
-            cloud_data[r, c] = 0
-
-    with h5py.File(out_path, "w") as f:
-        grp = f.create_group("HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields")
-
-        ds_rad = grp.create_dataset("Gap_Filled_DNB_BRDF-Corrected_NTL", data=radiance_data)
-        ds_rad.attrs["scale_factor"] = 0.1
-        ds_rad.attrs["add_offset"] = 0.0
-        ds_rad.attrs["_FillValue"] = 65535
-        ds_rad.attrs["units"] = "nW/(cm2 sr)"
-
-        ds_qual = grp.create_dataset("Mandatory_Quality_Flag", data=quality_data)
-        ds_qual.attrs["_FillValue"] = 255
-
-        ds_cloud = grp.create_dataset("QF_Cloud_Mask", data=cloud_data)
-        ds_cloud.attrs["_FillValue"] = 255
-
-    log.info("Created synthetic Black Marble HDF5 file at %s", out_path)
-    return out_path
 
 
 def _find_data_dirs() -> tuple[Path, Path]:
@@ -141,12 +61,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--bbox",
         default=f"{SEOUL_BBOX[0]},{SEOUL_BBOX[1]},{SEOUL_BBOX[2]},{SEOUL_BBOX[3]}",
         help="Bounding box minLng,minLat,maxLng,maxLat (default: Seoul bbox)",
-    )
-    parser.add_argument(
-        "--synthetic-fallback",
-        action="store_true",
-        default=True,
-        help="If download token is not available and input-file is missing, generate synthetic HDF5 file",
     )
     return parser.parse_args(argv)
 
@@ -191,18 +105,27 @@ def run(args: argparse.Namespace) -> int:
         # Check token for downloading
         token = get_earthdata_token()
         if not token:
-            log.warning(
-                "NASA_EARTHDATA_TOKEN is not set in environment or backend/.env. "
-                "Download from LAADS DAAC requires a free NASA Earthdata account token."
+            log.error(
+                "NASA_EARTHDATA_TOKEN is required to download Black Marble HDF5 data from LAADS DAAC, "
+                "but was not found in environment or backend/.env. "
+                "Specify an existing HDF5 file via --input-file or set NASA_EARTHDATA_TOKEN. "
+                "Nothing will be written to data/processed/."
             )
-            if args.synthetic_fallback:
-                log.info("Generating synthetic HDF5 file for Seoul tile %s...", args.tile)
-                raw_dir, _ = _find_data_dirs()
-                input_path = raw_dir / f"{args.product}.A{start_date.strftime('%Y%j')}.{args.tile}.synthetic.h5"
-                create_synthetic_seoul_hdf5(input_path, product=args.product, tile=args.tile)
-            else:
-                log.error("No input file provided and downloading is unavailable without NASA_EARTHDATA_TOKEN.")
-                return 1
+            return 1
+
+        raw_dir, _ = _find_data_dirs()
+        # Build target filename and URL for LAADS DAAC
+        doy = int(start_date.strftime("%j"))
+        year = start_date.year
+        target_name = f"{args.product}.A{year}{doy:03d}.{args.tile}.002.h5"
+        download_url = build_archive_url(args.product, year, doy, filename=target_name)
+        input_path = raw_dir / target_name
+
+        try:
+            download_granule(download_url, input_path, token=token)
+        except Exception as exc:
+            log.error("Failed to download NASA granule from %s: %s", download_url, exc)
+            return 1
 
     # Extract night light records
     records = extract_night_lights(
