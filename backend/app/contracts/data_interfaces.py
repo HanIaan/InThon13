@@ -122,7 +122,7 @@ class CellIndicators:
     grid_id: str
     time_slot: TimeSlot
     noise: IndicatorValue   # raw_unit "dB"
-    light: IndicatorValue   # raw_unit "lux" (S-DoT) or "nW/cm2/sr" (NASA)
+    light: IndicatorValue   # raw_unit "nW/cm2/sr" (NASA VNP46A3); S-DoT lux only as evidence
     crowd: IndicatorValue   # raw_unit "persons/km2"
 
 
