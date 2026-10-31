@@ -6,3 +6,5 @@ requires-python = ">=3.11"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "-m 'not network'"
+markers = ["network: calls real external APIs (skipped by default)"]

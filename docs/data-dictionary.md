@@ -30,15 +30,29 @@
 | `night` | 22–01시 | 〃 |
 | `dawn` | 02–06시 | 〃 |
 
-## 3. 데이터 소스
+## 3. 데이터 소스 (2026-10-31 실제 확인)
 
-> 접근 방식·해상도·갱신 주기는 각 수집 담당이 **실제 확인 후** 이 표를 갱신합니다. 아래는 사전 조사 기준 예상값입니다.
-
-| `source_id` | 데이터 | 예상 제공 방식 | 공간 해상도 | 갱신 | 사용 지표 |
+| `source_id` | 데이터 | 실제 제공 방식 | 공간 해상도 | 갱신 / 확보 기간 | 사용 지표 |
 | --- | --- | --- | --- | --- | --- |
-| `sdot` | 서울 S-DoT 도시데이터 센서 환경정보 | 서울 열린데이터광장 Open API (인증키) | 센서 지점 (약 1,100개) | 시간/일 단위 | 소음 dB, 조도 lux |
-| `living_population` | 서울 생활인구 (내국인) | 서울 열린데이터광장 Open API / 파일 | 행정동 (집계구 단위 파일도 존재) | 일 단위 (수일 지연) | 혼잡 |
-| `nasa_black_marble` | NASA Black Marble VNP46A2 (일별) / A3 (월별) / A4 (연간) | NASA Earthdata LAADS DAAC (토큰) | 15 arc-sec (~460m) | 일/월/연 | 야간 빛 |
+| `sdot` | 서울 S-DoT 환경정보 ([OA-15969](https://data.seoul.go.kr/dataList/OA-15969/S/1/datasetView.do)) | 열린데이터광장 **주간 CSV 파일** (인증키 불필요). Open API는 인증키 필요 | 센서 지점 1,169개 위치 / 관측 센서 1,074개 | 주간 파일, 1시간 단위(측정시각 HH:07 → 정시로 정규화). 확보: 2026-10-12 ~ 10-18 | 소음 dB, 조도 lux |
+| `living_population` | 서울 생활인구 행정동 ([OA-14991](https://data.seoul.go.kr/dataList/OA-14991/S/1/datasetView.do)) | 월별 ZIP 파일 (인증키 불필요) | 행정동 424개 (**2016년 행정동 코드 체계**) | **2026-07-31로 행정동 시계열 생산 종료**, 이후 250m 국가표준격자로 전환. 확보: 2026-07-25 ~ 07-31 | 혼잡 |
+| `nasa_black_marble` | NASA Black Marble VNP46A2/A3/A4 | LAADS DAAC, 무료 Earthdata 토큰 필요 | 15 arc-sec (~463m), 서울 = 타일 h30v05 | 일/월/연. **미적재** (토큰 없음) | 야간 빛 |
+
+- 행정동 경계: [vuski/admdongkor](https://github.com/vuski/admdongkor) 2016-12-31 버전 (생활인구 424개 코드와 정확히 일치). GeoJSON에 `area_km2` 속성 추가.
+- S-DoT 결측률: 소음 5.6%, 조도 18.5%. 품질 플래그가 붙은 행 25,963개(15.4%)는 점수 계산에서 제외.
+- **시점 차이**: 혼잡도(2026년 7월)와 소음·조도(2026년 10월)의 측정 기간이 다릅니다. 각 지표의 `period_start`/`period_end`로 확인할 수 있습니다.
+
+### S-DoT `quality_flag`
+
+세미콜론으로 구분한 토큰 목록입니다(정렬됨). 비어 있으면 정상입니다.
+
+| 토큰 | 의미 |
+| --- | --- |
+| `noise_out_of_range` / `light_out_of_range` | 물리적으로 불가능한 범위의 값 |
+| `noise_stuck_value` | 소음 값이 12시간 이상 연속으로 같음 |
+| `light_stuck_value` | 조도 값이 24시간 이상 연속으로 같음 (가로등 아래 야간 고정값은 실제 현상이라 제외) |
+| `duplicate_merged` | 같은 시각의 중복 행을 병합함 |
+| `no_valid_location` | 센서 위치 없음 또는 서울 범위 밖 |
 
 ## 4. 처리 파일 (수집 → 엔진 인터페이스)
 
