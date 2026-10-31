@@ -5,6 +5,8 @@ import { useId, useRef, type PointerEvent } from "react";
 import { grade, GRADE_A, GRADE_B, HOUR_MARKS, level, SENSE_LABEL, type Sense } from "@/lib/rest";
 
 const SENSES: Sense[] = ["sound", "light", "crowd"];
+// 패널이 이 비율 이상 오른쪽 밖으로 나가면 접는다.
+const PUSH_OUT_RATIO = 0.3;
 
 export type Offset = { x: number; y: number };
 
@@ -87,25 +89,37 @@ export function SpotsPanel({
   const move = useRef<{ x: number; y: number; from: Offset; box: DOMRect } | null>(null);
   return (
     <aside className={`spots glass ${open ? "" : "closed"}`} style={open ? { translate: `${offset.x}px ${offset.y}px` } : undefined} aria-label="추천 휴식 장소">
-      <button className="spots-toggle glass" onClick={onToggle} aria-expanded={open} aria-label={open ? "추천 장소 접기" : "추천 장소 펼치기"}>{open ? "›" : "‹"}</button>
+      {!open && <button className="spots-toggle glass" onClick={onToggle} aria-label="추천 장소 펼치기">‹</button>}
       <header
         onPointerDown={(e) => {
-          move.current = { x: e.clientX, y: e.clientY, from: offset, box: e.currentTarget.parentElement!.getBoundingClientRect() };
+          const panel = e.currentTarget.parentElement!;
+          move.current = { x: e.clientX, y: e.clientY, from: offset, box: panel.getBoundingClientRect() };
+          panel.classList.add("moving");
           e.currentTarget.setPointerCapture(e.pointerId);
         }}
         onPointerMove={(e) => {
           const start = move.current;
           if (!start) return;
-          // 배율이 적용된 카드라 화면 픽셀 이동량을 배율로 나눠 옮긴다. 화면 밖으로는 나가지 않는다.
-          const dx = Math.min(window.innerWidth - start.box.right, Math.max(-start.box.left, e.clientX - start.x));
+          // 배율이 적용된 카드라 화면 픽셀 이동량을 배율로 나눠 옮긴다. 오른쪽으로만 화면 밖까지 밀 수 있다.
+          const dx = Math.max(-start.box.left, e.clientX - start.x);
           const dy = Math.min(window.innerHeight - start.box.bottom, Math.max(-start.box.top, e.clientY - start.y));
           const scale = Number(getComputedStyle(document.documentElement).getPropertyValue("--ui")) || 1;
           onMove({ x: start.from.x + dx / scale, y: start.from.y + dy / scale });
         }}
-        onPointerUp={() => {
+        onPointerUp={(e) => {
+          const panel = e.currentTarget.parentElement!;
+          panel.classList.remove("moving");
+          const box = panel.getBoundingClientRect();
+          if (move.current && box.right - window.innerWidth > box.width * PUSH_OUT_RATIO) {
+            onMove({ x: 0, y: 0 });
+            onToggle();
+          } else if (move.current && box.right > window.innerWidth) {
+            onMove({ ...offset, x: offset.x - (box.right - window.innerWidth) / (box.width / panel.offsetWidth) });
+          }
           move.current = null;
         }}
-        onPointerCancel={() => {
+        onPointerCancel={(e) => {
+          e.currentTarget.parentElement!.classList.remove("moving");
           move.current = null;
         }}
       >

@@ -73,8 +73,10 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
   padding: 16px 18px;
   border-radius: 20px;
 }
+.tune:not(.open) { width: auto; padding: 9px 14px; border-radius: 16px; }
+.tune:not(.open) .tune-head { gap: 12px; }
 .tune-head { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0; font-size: 14px; font-weight: 700; cursor: grab; touch-action: none; }
-.tune-head span { color: var(--muted); font-size: 20px; line-height: 1; }
+.tune-toggle { display: grid; place-items: center; width: 28px; height: 28px; margin: -6px; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
 .range { display: block; margin-top: 12px; font-size: 13px; font-weight: 500; }
 .range span { display: flex; justify-content: space-between; margin-bottom: 3px; }
 .range b { font-weight: 700; }
@@ -182,7 +184,8 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 }
 .spot-pin.active span { width: 34px; height: 34px; background: var(--ink); color: #fff; }
 
-.spots { position: fixed; z-index: 30; top: 50%; right: 20px; transform: translateY(-50%); width: 300px; padding: 16px 12px; border-radius: 20px; transition: transform 0.28s ease; }
+.spots { position: fixed; z-index: 30; top: 50%; right: 20px; transform: translateY(-50%); width: 300px; padding: 16px 12px; border-radius: 20px; transition: transform 0.28s ease, translate 0.28s ease; }
+.spots.moving { transition: none; }
 .spots.closed { transform: translate(calc(100% + 20px), -50%); }
 .spots-toggle { position: absolute; top: 50%; left: -28px; display: grid; place-items: center; width: 28px; height: 64px; border-radius: 12px 0 0 12px; color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer; transform: translateY(-50%); }
 .spots header { padding: 0 8px 10px; cursor: grab; touch-action: none; user-select: none; }

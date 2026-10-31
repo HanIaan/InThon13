@@ -110,7 +110,7 @@ export function TuneCard({
   const drag = useRef<{ x: number; y: number; from: typeof offset; box: DOMRect; moved: boolean } | null>(null);
 
   // 배율이 적용된 카드라 화면 픽셀 이동량을 배율로 나눠 옮긴다.
-  const move = (e: PointerEvent<HTMLButtonElement>) => {
+  const move = (e: PointerEvent<HTMLDivElement>) => {
     const start = drag.current;
     if (!start) return;
     const dx = Math.min(window.innerWidth - start.box.right, Math.max(-start.box.left, e.clientX - start.x));
@@ -122,27 +122,33 @@ export function TuneCard({
 
   return (
     <aside className={`tune glass ${open ? "open" : ""}`} style={{ translate: `${offset.x}px ${offset.y}px`, visibility: hidden ? "hidden" : undefined }}>
-      <button
+      <div
         className="tune-head"
-        aria-expanded={open}
         onPointerDown={(e) => {
           drag.current = { x: e.clientX, y: e.clientY, from: offset, box: e.currentTarget.parentElement!.getBoundingClientRect(), moved: false };
           e.currentTarget.setPointerCapture(e.pointerId);
         }}
         onPointerMove={move}
         onPointerUp={() => {
-          if (drag.current && !drag.current.moved) onToggle();
+          // 펼친 카드는 마이너스 버튼으로만 접고, 작아진 카드는 어디를 눌러도 펼친다.
+          if (!open && drag.current && !drag.current.moved) onToggle();
           drag.current = null;
         }}
         onPointerCancel={() => {
           drag.current = null;
         }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") onToggle();
-        }}
       >
-        내 감각<span aria-hidden="true">{open ? "−" : "+"}</span>
-      </button>
+        내 감각
+        <button
+          className="tune-toggle"
+          aria-expanded={open}
+          aria-label={open ? "내 감각 접기" : "내 감각 펼치기"}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onToggle}
+        >
+          {open ? "−" : "+"}
+        </button>
+      </div>
       {open && (
         <>
           {children}
