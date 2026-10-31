@@ -297,7 +297,6 @@ export default function Home() {
   }
 
   function chooseOnMap(next: { lat: number; lng: number }) {
-    if (up) return;
     if (isHome) {
       if (mapView && mapView.zoom < HOME_ZOOM) setToast("지도를 확대해 건물을 골라 주세요");
       else pick(next);
@@ -433,9 +432,7 @@ export default function Home() {
           activeHome={isHome ? home : null}
           onSpot={chooseSpot}
           onPoint={chooseOnMap}
-          onHome={(found) => {
-            if (!up) chooseHome(found);
-          }}
+          onHome={chooseHome}
           onView={setMapView}
         />
       </div>
