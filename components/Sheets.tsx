@@ -26,15 +26,15 @@ export function GlassSheets({ isHome, children }: { isHome: boolean; children: R
 export function PlaceSheet({
   target,
   score,
-  isHome,
   up,
   emptyValues,
+  children,
 }: {
   target: SheetTarget;
   score: SheetScore;
-  isHome: boolean;
   up: boolean;
   emptyValues: string[];
+  children?: ReactNode;
 }) {
   const open = () => document.querySelector(".sheet")?.scrollIntoView({ behavior: "smooth" });
   const search = encodeURIComponent(target.title);
@@ -45,7 +45,7 @@ export function PlaceSheet({
         <strong>{score.value ?? "-"}</strong>
         <em style={{ color: score.color }}>{score.label}</em>
       </button>
-      <div className={`place-grid ${isHome ? "" : "solid"}`}>
+      <div className={`place-grid solid ${children ? "with-inputs" : ""}`}>
         <div className="module place-info">
           <p className="where">{target.line}</p>
           <h1>{target.title}</h1>
@@ -64,11 +64,7 @@ export function PlaceSheet({
           </div>
           <p className="hint">OpenStreetMap 기준이며 실제와 다를 수 있어요.</p>
         </div>
-        {isHome && (
-          <div className="opening-slot">
-            <div className="opening" aria-hidden="true" />
-          </div>
-        )}
+        {children && <div className="place-side">{children}</div>}
       </div>
     </section>
   );
@@ -78,6 +74,7 @@ export function ScoreSheet({
   heading,
   subtitle,
   score,
+  secondary,
   sliders,
   story,
   extra,
@@ -86,6 +83,7 @@ export function ScoreSheet({
   heading: string;
   subtitle?: string;
   score: SheetScore;
+  secondary?: { label: string; value: number | null };
   sliders: ReactNode;
   story: ReactNode;
   extra?: ReactNode;
@@ -99,6 +97,7 @@ export function ScoreSheet({
           {subtitle && <p className="where">{subtitle}</p>}
           <p className="score">{score.value ?? "-"}</p>
           <p className="verdict" style={{ color: score.color }}>{score.label}</p>
+          {secondary && <p className="secondary">{secondary.label} <b>{secondary.value ?? "-"}</b></p>}
         </div>
         <div className="module tune-module">
           <h2>내 감각</h2>
@@ -113,6 +112,14 @@ export function ScoreSheet({
         </div>
         <div className="module side">{side}</div>
       </div>
+    </section>
+  );
+}
+
+export function ReportSheet({ children }: { children: ReactNode }) {
+  return (
+    <section className="sheet report">
+      <div className="report-grid module">{children}</div>
     </section>
   );
 }

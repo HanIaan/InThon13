@@ -3,9 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Dock, SensitivitySliders, TopSwitch, TuneCard } from "@/components/Controls";
-import { HomeCandidates, VisitChecklist } from "@/components/HomeViews";
+import { HomeCompare, HomeInputs, LightCard, NoiseCard, SunCard, VisitChecklist, type RankedHome } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
-import { GlassSheets, PlaceSheet, ScoreSheet } from "@/components/Sheets";
+import { GlassSheets, PlaceSheet, ReportSheet, ScoreSheet } from "@/components/Sheets";
+import {
+  adjustedLight,
+  daylightScore,
+  lightAdvice,
+  nearestSensor,
+  sleepScore,
+  sleepVerdict,
+  sunReport,
+  type Building,
+  type HomeInput,
+  type SunReport,
+} from "@/lib/home-report";
 import {
   API_BASE,
   errorText,
@@ -35,8 +47,6 @@ import {
   burdenAt,
   explain,
   grade,
-  homeLabel,
-  homeScore,
   hourLabel,
   level,
   restScore,
@@ -63,7 +73,9 @@ export default function Home() {
   const [picked, setPicked] = useState(false);
   const [activeSpot, setActiveSpot] = useState<string | null>(null);
   const [home, setHome] = useState<HomePlace>(() => nearestHome(START_POINT.lat, START_POINT.lng));
-  const [saved, setSaved] = useState<HomePlace[]>([]);
+  const [homeInput, setHomeInput] = useState<HomeInput>({ floor: 3, direction: "south" });
+  const [saved, setSaved] = useState<{ home: HomePlace; input: HomeInput }[]>([]);
+  const [buildings, setBuildings] = useState<Building[] | null>(null);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"rest" | "home">("rest");
   const [checked, setChecked] = useState<string[]>([]);
@@ -87,7 +99,12 @@ export default function Home() {
   const scores = useMemo(() => {
     const map = new Map<string, number>();
     for (const cell of cells) {
-      map.set(cell.id, isHome ? homeScore(cell.burdens, sensitivity) : restScore(burdenAt(cell.burdens, hour), sensitivity));
+      map.set(
+        cell.id,
+        isHome
+          ? sleepScore(cell.burdens.night.sound, cell.burdens.night.light, sensitivity)
+          : restScore(burdenAt(cell.burdens, hour), sensitivity),
+      );
     }
     return map;
   }, [cells, hour, sensitivity, isHome]);
@@ -104,14 +121,19 @@ export default function Home() {
     setHour(new Date().getHours());
     if (window.innerWidth <= 860) setTuneOpen(false);
     try {
-      const ids: string[] = JSON.parse(localStorage.getItem("saved-homes") ?? "[]");
-      setSaved(HOMES.filter((h) => ids.includes(h.id)));
+      const stored: { id: string; input: HomeInput }[] = JSON.parse(localStorage.getItem("saved-home-inputs") ?? "[]");
+      setSaved(
+        stored.flatMap(({ id, input }) => {
+          const found = HOMES.find((h) => h.id === id);
+          return found ? [{ home: found, input }] : [];
+        }),
+      );
     } catch {}
   }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem("saved-homes", JSON.stringify(saved.map((h) => h.id)));
+      localStorage.setItem("saved-home-inputs", JSON.stringify(saved.map((s) => ({ id: s.home.id, input: s.input }))));
     } catch {}
   }, [saved]);
 
@@ -175,6 +197,16 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!isHome || buildings) return;
+    const control = new AbortController();
+    fetch("/buildings.json", { signal: control.signal })
+      .then((res) => res.json())
+      .then(setBuildings)
+      .catch(() => {});
+    return () => control.abort();
+  }, [isHome, buildings]);
+
+  useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 2400);
     return () => window.clearTimeout(timer);
@@ -209,7 +241,7 @@ export default function Home() {
     const place = placePoint(name);
     if (!place) return;
     if (isHome) {
-      setHome(nearestHome(place.lat, place.lng));
+      chooseHome(nearestHome(place.lat, place.lng));
     } else {
       setPoint({ lat: place.lat, lng: place.lng });
       setPicked(true);
@@ -220,7 +252,7 @@ export default function Home() {
     if (up) return;
     if (isHome) {
       const found = homeAtPoint(next.lat, next.lng);
-      if (found) setHome(found);
+      if (found) chooseHome(found);
       else setToast("주거 시설만 선택할 수 있어요");
       return;
     }
@@ -241,16 +273,24 @@ export default function Home() {
     setChecked(checked.includes(key) ? checked.filter((k) => k !== key) : [...checked, key]);
   }
 
-  function toggleSaved(target: HomePlace) {
-    setSaved(saved.some((h) => h.id === target.id) ? saved.filter((h) => h.id !== target.id) : [...saved, target].slice(-3));
+  function toggleSaved() {
+    setSaved(
+      saved.some((s) => s.home.id === home.id)
+        ? saved.filter((s) => s.home.id !== home.id)
+        : [...saved, { home, input: homeInput }].slice(-3),
+    );
   }
 
-  const scoreAt = (cell: Cell, at: Slot) =>
-    isHome && cell.id === homeCell.id && details?.[at] ? details[at].comfort_score : restScore(cell.burdens[at], sensitivity);
-  const homeTotal = (cell: Cell) => {
-    if (cell.id !== homeCell.id || !details) return homeScore(cell.burdens, sensitivity);
-    const [night, dawn] = [details.night?.comfort_score, details.dawn?.comfort_score];
-    return night == null || dawn == null ? null : Math.round((night + dawn) / 2);
+  function chooseHome(next: HomePlace) {
+    setHome(next);
+    const levels = Number(next.levels) || 0;
+    if (levels && homeInput.floor > levels) setHomeInput({ ...homeInput, floor: levels });
+  }
+
+  const sleepOf = (item: HomePlace, input: HomeInput) => {
+    const cell = cellForHome(item, cells);
+    const light = adjustedLight(cell.burdens.night.light, input, item.lat, item.lng);
+    return { cell, light, sleep: sleepScore(cell.burdens.night.sound, light, sensitivity) };
   };
 
   const lightOff = !isHome && slot === "day";
@@ -309,17 +349,31 @@ export default function Home() {
         : null;
 
   const burden = target ? burdenAt(target.cell.burdens, hour) : null;
-  const score = target ? (isHome ? homeTotal(target.cell) : restScore(burden!, sensitivity)) : null;
+  const report: SunReport | null = useMemo(
+    () => (isHome && buildings ? sunReport(home, homeInput, buildings) : null),
+    [isHome, buildings, home, homeInput],
+  );
+  const homeResult = sleepOf(home, homeInput);
+  const apiNight = isHome ? details?.night?.comfort_score : undefined;
+  const score = target ? (isHome ? apiNight ?? homeResult.sleep : restScore(burden!, sensitivity)) : null;
   const scoreGrade = grade(score ?? 0);
-  const label = score === null ? "데이터 없음" : isHome ? homeLabel(score) : scoreGrade.label;
-  const isSaved = saved.some((h) => h.id === home.id);
+  const label = score === null ? "데이터 없음" : isHome ? sleepVerdict(score) : scoreGrade.label;
+  const isSaved = saved.some((s) => s.home.id === home.id);
   const detail = details?.night;
-  const ranked = saved
-    .map((item) => {
-      const cell = cellForHome(item, cells);
-      return { item, score: homeTotal(cell), night: scoreAt(cell, "night"), dawn: scoreAt(cell, "dawn") };
+  const ranked: RankedHome[] = saved
+    .map(({ home: item, input }) => {
+      const result = sleepOf(item, input);
+      const sun = buildings ? sunReport(item, input, buildings) : null;
+      return {
+        item,
+        input,
+        sleep: result.sleep,
+        daylight: sun ? daylightScore(sun.winter.minutes) : null,
+        noise: `${result.cell.noiseDb.night}dB`,
+        light: result.light,
+      };
     })
-    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+    .sort((a, b) => (b.sleep ?? -1) - (a.sleep ?? -1));
   const levelOf = (sense: Sense) => {
     if (!target || !burden) return "-";
     if (!isHome) {
@@ -382,43 +436,53 @@ export default function Home() {
 
       {target && (
         <GlassSheets isHome={isHome}>
-          <PlaceSheet target={target} score={sheetScore} isHome={isHome} up={up} emptyValues={[missing, looking]} />
+          <PlaceSheet target={target} score={sheetScore} up={up} emptyValues={[missing, looking]}>
+            {isHome && (
+              <HomeInputs
+                input={homeInput}
+                maxFloor={Number(home.levels) || 30}
+                onChange={setHomeInput}
+              />
+            )}
+          </PlaceSheet>
           <ScoreSheet
             heading={target.title}
-            subtitle={isHome ? undefined : `${target.line} · ${hourLabel(hour)}`}
+            subtitle={isHome ? "수면 환경 점수" : `${target.line} · ${hourLabel(hour)}`}
             score={sheetScore}
+            secondary={isHome ? { label: "낮 햇빛 점수", value: report ? daylightScore(report.winter.minutes) : null } : undefined}
             sliders={sliders}
             story={
-              <>
-                <h2>{isHome ? "이 건물의 밤" : "이 장소의 지금"}</h2>
-                <p className="note">
-                  {isHome ? sleepBlocker(target.cell.burdens.night, sensitivity) : explain(burden!, sensitivity, score ?? 0)}
-                </p>
-                {isHome && detail?.notes?.map((note) => <p className="data-note" key={note}>{note}</p>)}
-                <p className="data-note">
-                  {target.cell.area} · {target.cell.sensorM === null ? "600m 안에 소음 센서 없음" : `가까운 소음 센서 ${Math.round(target.cell.sensorM)}m`}
-                  {" · "}신뢰도 {confidenceLabel(target.cell.confidence.sound)}
-                </p>
-                <dl className="levels">
-                  {SENSES.map((s) => (
-                    <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
-                  ))}
-                </dl>
-              </>
-            }
-            extra={
-              isHome && (
-                <VisitChecklist
-                  homeId={home.id}
-                  items={visitChecklist(target.cell.burdens.night, sensitivity)}
-                  checked={checked}
-                  onToggle={toggleCheck}
+              isHome ? (
+                <NoiseCard
+                  day={target.cell.noiseDb.day}
+                  evening={target.cell.noiseDb.evening}
+                  night={target.cell.noiseDb.night}
+                  sensor={nearestSensor(home.lat, home.lng)}
                 />
+              ) : (
+                <>
+                  <h2>이 장소의 지금</h2>
+                  <p className="note">{explain(burden!, sensitivity, score ?? 0)}</p>
+                  <p className="data-note">
+                    {target.cell.area} · {target.cell.sensorM === null ? "600m 안에 소음 센서 없음" : `가까운 소음 센서 ${Math.round(target.cell.sensorM)}m`}
+                    {" · "}신뢰도 {confidenceLabel(target.cell.confidence.sound)}
+                  </p>
+                  <dl className="levels">
+                    {SENSES.map((s) => (
+                      <div key={s}><dt>{SENSE_LABEL[s]}</dt><dd>{levelOf(s)}</dd></div>
+                    ))}
+                  </dl>
+                </>
               )
             }
             side={
               isHome ? (
-                <HomeCandidates ranked={ranked} isSaved={isSaved} onToggleSaved={() => toggleSaved(home)} onSelect={setHome} />
+                <LightCard
+                  level={level(homeResult.light)}
+                  score={homeResult.light}
+                  advice={lightAdvice(homeResult.light, sensitivity)}
+                  floor={homeInput.floor}
+                />
               ) : (
                 <RestHours
                   hour={hour}
@@ -428,6 +492,26 @@ export default function Home() {
               )
             }
           />
+          {isHome && (
+            <ReportSheet>
+              <SunCard report={report} />
+              <VisitChecklist
+                homeId={home.id}
+                items={visitChecklist(target.cell.burdens.night, sensitivity)}
+                checked={checked}
+                onToggle={toggleCheck}
+              />
+              <HomeCompare
+                ranked={ranked}
+                isSaved={isSaved}
+                onToggleSaved={toggleSaved}
+                onSelect={(row) => {
+                  setHome(row.item);
+                  setHomeInput(row.input);
+                }}
+              />
+            </ReportSheet>
+          )}
         </GlassSheets>
       )}
     </>

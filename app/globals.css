@@ -31,7 +31,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
   -webkit-mask-image: radial-gradient(ellipse 68% 68% at center, #000 62%, transparent 100%);
   mask-image: radial-gradient(ellipse 68% 68% at center, #000 62%, transparent 100%);
 }
-.place span {
+.leaflet-marker-icon.place span {
   position: absolute;
   transform: translate(-50%, -170%);
   color: var(--ink);
@@ -205,6 +205,37 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .links a + a { background: #fff; color: var(--ink); }
 .place-info .hint { margin-top: 12px; font-size: 12px; }
 
+.place-grid.solid.with-inputs { grid-template-columns: minmax(0, 480px) minmax(0, 320px); grid-template-areas: "info side"; align-items: center; gap: 56px; }
+.place-side { grid-area: side; pointer-events: auto; }
+.home-inputs { display: grid; gap: 16px; padding: 22px; background: rgba(255, 255, 255, 0.72); border-radius: 18px; font-size: 13px; }
+.home-inputs h2 { font-size: 16px; font-weight: 700; }
+.home-inputs label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.home-inputs span { color: var(--muted); }
+.home-inputs input { width: 76px; height: 34px; padding: 0 10px; background: #fff; border: 1px solid var(--line); border-radius: 9px; text-align: right; }
+.direction { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin-top: 5px; padding: 3px; background: rgba(16, 20, 24, 0.07); border-radius: 11px; }
+.direction button { padding: 6px 0; border-radius: 9px; font-size: 13px; font-weight: 500; }
+.direction button.on { background: var(--ink); color: #fff; }
+.secondary { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.secondary b { color: var(--ink); font-size: 18px; font-weight: 600; }
+
+.report-card h2, .compare-card h2 { margin-bottom: 8px; }
+.card-value { font-size: 28px; font-weight: 600; letter-spacing: -0.03em; }
+.card-value small { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.sensor-chart { display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 2px; height: 44px; margin-top: 14px; }
+.sensor-chart i { display: block; background: var(--ink); border-radius: 2px 2px 0 0; opacity: 0.7; }
+.night-window { position: relative; height: 62px; margin: 10px 0; overflow: hidden; background: #111827; border-radius: 12px; }
+.night-window i { position: absolute; inset: 0; background: radial-gradient(circle at 25% 45%, #fde68a 0 3px, transparent 26px), radial-gradient(circle at 62% 35%, #fff7d6 0 2px, transparent 32px), radial-gradient(circle at 82% 70%, #fbbf24 0 3px, transparent 34px), linear-gradient(0deg, rgba(253, 230, 138, 0.35), transparent); }
+.sun-line { display: grid; grid-template-columns: repeat(72, 1fr); height: 18px; margin-top: 14px; overflow: hidden; background: rgba(16, 20, 24, 0.09); border-radius: 6px; }
+.sun-line .lit { background: #f0c454; }
+.sun-axis { display: flex; justify-content: space-between; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.sheet.report { min-height: 100dvh; }
+.report-grid { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 40px; max-width: 980px; min-height: 100dvh; margin: 0 auto; padding: 84px 32px 92px; align-content: center; }
+.compare-card { grid-column: 1 / -1; padding-top: 18px; border-top: 1px solid var(--line); }
+.compare-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.compare-card th { padding: 5px 2px; color: var(--muted); font-weight: 400; text-align: left; }
+.compare-card td { padding: 7px 2px; border-top: 1px solid var(--line); font-weight: 600; cursor: pointer; }
+.compare-card td small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
+
 .sheet-grid {
   position: relative;
   display: grid;
@@ -305,6 +336,9 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
   .levels dt { font-size: 11px; }
   .levels dd { font-size: 12px; }
   .opening-slot { container-type: size; place-items: center; }
+  .page.home .sheet { height: auto; overflow: visible; }
+  .page.home .sheet-grid, .page.home .place-grid { height: auto; grid-template-rows: none; }
+  .page.home .opening-slot { height: min(100vw - 28px, 42dvh); }
   .opening { width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); }
   .tune-module { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; }
   .tune-module h2 { display: none; }
@@ -326,6 +360,13 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
     padding: 62px 14px 68px;
   }
   .place-info h1 { margin: 2px 0 10px; font-size: 26px; }
+  .place-grid.solid.with-inputs { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; grid-template-areas: "info" "side"; align-content: center; gap: 18px; min-height: 100dvh; }
+  .home-inputs { gap: 12px; padding: 16px; }
+  .place .links { margin-top: 8px; }
+  .report-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 72px 16px 84px; }
+  .sensor-chart { height: 30px; margin-top: 8px; }
+  .night-window { height: 36px; margin: 6px 0; }
+  .card-value { font-size: 22px; }
   .place-grid.solid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); padding-top: 76px; }
   .place-grid.solid h1 { font-size: 34px; }
   .place-info dl { gap: 6px; padding: 10px 0; }
