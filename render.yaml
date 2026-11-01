@@ -9,8 +9,9 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/v1/health
     envVars:
+      # 실서비스: Supabase(DATABASE_URL)에서 사전계산 결과를 읽는다.
       - key: DATA_MODE
-        value: mock
+        value: live
       - key: CORS_PROD_ORIGINS
         sync: false
       - key: CORS_DEV_ORIGINS

@@ -27,7 +27,8 @@ def connect(database_url):
     conn = psycopg.connect(database_url, connect_timeout=5, row_factory=dict_row)
     conn.execute("SET search_path TO public, extensions")
     conn.execute("SET TIME ZONE 'Asia/Seoul'")
-    conn.execute("SET statement_timeout = '30s'")
+    # 서버를 켤 때 cell_indicators(약 19만 행)를 한 번에 읽으므로 30초로는 모자라 첫 요청이 실패했다.
+    conn.execute("SET statement_timeout = '120s'")
     conn.commit()
     return conn
 
