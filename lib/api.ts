@@ -1,7 +1,10 @@
 import { SENSITIVITY_SCALE, type Sensitivity, type Slot } from "./rest";
 
 // 백엔드 연동 가이드 기준의 클라이언트다. 주소가 없으면 화면은 저장된 격자 데이터로 동작한다.
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
+const RAW_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
+// 값이 있으면 백엔드를 쓴다. "/"이면 화면과 같은 주소의 /api/v1을 부른다(Vercel에서 화면과 API를 한 프로젝트로 배포할 때).
+export const API_BASE = RAW_API_BASE;
+const API_ORIGIN = RAW_API_BASE === "/" ? "" : RAW_API_BASE.replace(/\/$/, "");
 // mock 응답은 실제 수치가 아니라서 화면에 쓰지 않는다. 연동을 시험할 때만 켠다.
 const USE_MOCK = process.env.NEXT_PUBLIC_API_USE_MOCK === "1";
 
@@ -52,7 +55,7 @@ function query(slot: Slot, sensitivity: Sensitivity) {
 }
 
 async function get<T>(path: string, params: Record<string, string>, signal: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}?${new URLSearchParams(params)}`, { signal });
+  const res = await fetch(`${API_ORIGIN}${path}?${new URLSearchParams(params)}`, { signal });
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(body?.error?.code ?? "unknown", body?.error?.message ?? "요청에 실패했어요.");
   return body as T;
