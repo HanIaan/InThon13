@@ -1,0 +1,8 @@
+# Python dependencies for the Vercel API function (api/index.py) only.
+# Serving needs no pandas/h5py (those are for data ingestion; see backend/requirements.txt).
+fastapi>=0.115,<1.0
+pydantic>=2.7,<3.0
+pydantic-settings>=2.3,<3.0
+pyproj>=3.6
+shapely>=2.0
+psycopg[binary]>=3.1

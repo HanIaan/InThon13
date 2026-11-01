@@ -62,12 +62,21 @@ export function fetchGrid(bbox: number[], slot: Slot, sensitivity: Sensitivity, 
   return get<GridResponse>("/api/v1/grid", { bbox: bbox.join(","), ...query(slot, sensitivity) }, signal);
 }
 
-// 서버는 한 번에 6,000칸까지만 주므로, 넓게 볼 때는 0.1° 구역(약 2,400칸)으로 나눠 받아 합친다.
-// 구역 응답은 시간대·민감도별로 저장해 두고, 지도를 옮길 때 다시 받지 않는다.
-const CHUNK_DEG = 0.1;
+// 지도는 화면 범위 그대로가 아니라 고정 구역 단위로 받아 합친다. 같은 구역은 요청 주소가 같아서
+// 브라우저(cache)와 CDN이 다시 쓴다. 넓게 볼 때는 0.1°(약 2,400칸, 서버 한도 6,000칸 안),
+// 확대했을 때는 0.025°(약 150칸) 구역을 쓴다. 응답은 시간대·민감도별로 저장한다.
+export const OVERVIEW_CHUNK_DEG = 0.1;
+export const DETAIL_CHUNK_DEG = 0.025;
 export type Bounds = { south: number; north: number; west: number; east: number };
 
-export async function fetchGridChunks(view: Bounds, area: Bounds, slot: Slot, sensitivity: Sensitivity, cache: Map<string, Promise<GridResponse>>) {
+export async function fetchGridChunks(
+  view: Bounds,
+  area: Bounds,
+  slot: Slot,
+  sensitivity: Sensitivity,
+  cache: Map<string, Promise<GridResponse>>,
+  CHUNK_DEG = OVERVIEW_CHUNK_DEG,
+) {
   const params = query(slot, sensitivity);
   const index = (value: number, start: number) => Math.floor((value - start) / CHUNK_DEG);
   const [x0, x1] = [index(Math.max(view.west, area.west), area.west), index(Math.min(view.east, area.east), area.west)];
@@ -76,7 +85,7 @@ export async function fetchGridChunks(view: Bounds, area: Bounds, slot: Slot, se
   for (let x = x0; x <= x1; x++) {
     for (let y = y0; y <= y1; y++) {
       const [west, south] = [area.west + x * CHUNK_DEG, area.south + y * CHUNK_DEG];
-      const key = `${new URLSearchParams(params)}&chunk=${x}_${y}`;
+      const key = `${new URLSearchParams(params)}&chunk=${CHUNK_DEG}:${x}_${y}`;
       if (!cache.has(key)) {
         // 다른 요청이 취소해도 저장된 응답이 깨지지 않게 signal 없이 받는다. 서울 밖 구역은 빈 결과로 둔다.
         const bbox = [west, south, west + CHUNK_DEG, south + CHUNK_DEG].map((v) => v.toFixed(4)).join(",");

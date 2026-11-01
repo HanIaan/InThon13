@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     data_mode: Literal["mock", "live"] = "mock"
+    # live only: "snapshot" loads the whole published dataset into memory at startup (long-running
+    # server); "query" reads just the requested cells per request (serverless, e.g. Vercel).
+    live_read: Literal["snapshot", "query"] = "snapshot"
+    # Seconds a CDN may cache data responses (s-maxage). 0 disables. Data changes only on republish.
+    cache_seconds: int = 0
     cors_dev_origins: str = ""
     cors_prod_origins: str = ""
     # Ingestion output / precomputed indicator directory (relative paths resolve from backend/).

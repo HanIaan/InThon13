@@ -22,8 +22,9 @@ import {
 import {
   API_BASE,
   errorText,
-  fetchGrid,
+  DETAIL_CHUNK_DEG,
   fetchGridChunks,
+  OVERVIEW_CHUNK_DEG,
   fetchInspect,
   indicatorText,
   isUsable,
@@ -208,9 +209,7 @@ export default function Home() {
     const control = new AbortController();
     const timeSlot = isHome ? "night" : slot;
     // 축소했을 때도 서버 점수로 칠한다. 평균 낸 정적 격자를 쓰면 높은 부담이 묽어져 빨간 곳이 사라진다.
-    const request = detailed
-      ? fetchGrid([mapView.west, mapView.south, mapView.east, mapView.north], timeSlot, applied, control.signal)
-      : fetchGridChunks(mapView, SEOUL, timeSlot, applied, gridChunks.current);
+    const request = fetchGridChunks(mapView, SEOUL, timeSlot, applied, gridChunks.current, detailed ? DETAIL_CHUNK_DEG : OVERVIEW_CHUNK_DEG);
     request
       .then((data) => {
         if (control.signal.aborted) return;
@@ -233,7 +232,8 @@ export default function Home() {
     }
     const control = new AbortController();
     const [dLat, dLng] = [0.012, 0.015];
-    fetchGrid([point.lng - dLng, point.lat - dLat, point.lng + dLng, point.lat + dLat], slot, applied, control.signal)
+    const around = { south: point.lat - dLat, north: point.lat + dLat, west: point.lng - dLng, east: point.lng + dLng };
+    fetchGridChunks(around, SEOUL, slot, applied, gridChunks.current, DETAIL_CHUNK_DEG)
       .then((data) => setArea(isUsable(data.meta?.data_mode) ? data : null))
       .catch(() => {
         if (!control.signal.aborted) setArea(null);

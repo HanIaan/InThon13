@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["dub1"],
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30,
+      "memory": 1024,
+      "excludeFiles": "{public/**,data/**,node_modules/**,.next/**,tools/**,docs/**,supabase/**,tests/**,backend/tests/**,backend/scripts/**,backend/app/ingestion/**,scripts/**}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/v1/:path*", "destination": "/api/index" }
+  ]
+}

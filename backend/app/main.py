@@ -41,6 +41,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # The CDN (Vercel) may keep successful data responses; the data only changes when a new
+    # snapshot is published. Health/status and errors are never cached.
+    cached_paths = tuple(f"{API_PREFIX}/{name}" for name in ("grid", "location/inspect", "recommendations"))
+
+    @app.middleware("http")
+    async def _cache_headers(request: Request, call_next):
+        response = await call_next(request)
+        if (settings.cache_seconds > 0 and request.method == "GET" and response.status_code == 200
+                and request.url.path.startswith(cached_paths)):
+            response.headers["Cache-Control"] = (
+                f"public, max-age=60, s-maxage={settings.cache_seconds}, stale-while-revalidate=86400")
+        return response
+
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError):
         return _error(exc.code, exc.message, exc.details)

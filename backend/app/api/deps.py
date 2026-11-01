@@ -16,6 +16,10 @@ from app.contracts.errors import ApiError, ErrorCode
 @lru_cache
 def get_provider() -> DataProvider:
     if get_settings().data_mode == "live":
+        if get_settings().live_read == "query":
+            from app.services.query_provider import QueryProvider
+
+            return QueryProvider(get_settings())
         # Implemented by the api-engine worker (services/live_provider.py).
         from app.services.live_provider import LiveProvider
 
