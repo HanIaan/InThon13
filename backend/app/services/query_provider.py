@@ -48,16 +48,33 @@ class QueryProvider:
         self.cell_count = 0
 
     # ---- connection ---------------------------------------------------------
-    def _query(self, sql, params=()):
-        """Run a read on the process connection, reconnecting once if the pooler dropped it.
-        Driver errors are replaced by a generic ApiError so the DSN never reaches a response."""
-        from app.db.postgres import connect
+    def _connect(self):
+        """Connection suited to a transaction pooler (e.g. Supabase port 6543).
 
+        Many serverless instances each holding a session-pooler connection exhaust the pool
+        ("max clients"), so QUERY_DB_PORT can point the same DATABASE_URL at the transaction
+        pooler. There, session state does not survive between transactions, so prepared
+        statements are off and settings are applied per transaction in _query (SET LOCAL)."""
+        import psycopg
+        from psycopg.conninfo import conninfo_to_dict
+        from psycopg.rows import dict_row
+
+        params = conninfo_to_dict(self._settings.database_url)
+        if self._settings.query_db_port:
+            params["port"] = str(self._settings.query_db_port)
+        return psycopg.connect(**params, connect_timeout=5, row_factory=dict_row, prepare_threshold=None)
+
+    def _query(self, sql, params=()):
+        """Run one read transaction, reconnecting once if the pooler dropped the connection.
+        Driver errors are replaced by a generic ApiError so the DSN never reaches a response."""
         for attempt in (1, 2):
             try:
                 with self._lock:
                     if self._conn is None or self._conn.closed:
-                        self._conn = connect(self._settings.database_url)
+                        self._conn = self._connect()
+                    # Same session settings as app.db.postgres.connect, scoped to this transaction.
+                    self._conn.execute("SET LOCAL TIME ZONE 'Asia/Seoul'")
+                    self._conn.execute("SET LOCAL statement_timeout = '20s'")
                     rows = self._conn.execute(sql, params).fetchall()
                     self._conn.commit()
                     return rows

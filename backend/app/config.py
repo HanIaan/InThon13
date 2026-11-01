@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     live_read: Literal["snapshot", "query"] = "snapshot"
     # Seconds a CDN may cache data responses (s-maxage). 0 disables. Data changes only on republish.
     cache_seconds: int = 0
+    # live_read=query only: connect to this port instead of DATABASE_URL's (e.g. 6543, Supabase's
+    # transaction pooler). Serverless instances otherwise each hold a session-pooler connection.
+    query_db_port: int | None = None
     cors_dev_origins: str = ""
     cors_prod_origins: str = ""
     # Ingestion output / precomputed indicator directory (relative paths resolve from backend/).
