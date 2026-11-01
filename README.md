@@ -4,6 +4,8 @@
 
 2026 InThon Team 13 · 주제 "감각"
 
+**서비스 바로가기: https://in-thon13.vercel.app**
+
 ## 주요 기능
 
 | 탭 | 할 수 있는 일 |
