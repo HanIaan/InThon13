@@ -154,14 +154,24 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, she
   const hover = useRef<any>(null);
   const view = useRef<MapView | null>(null);
   const redraw = useRef<() => void>(() => {});
+  const painted = useRef<{ source: unknown; color: HeatColor | null }>({ source: null, color: null });
+  const pinned = useRef<{ spots: Recommendation[] | null; active: string | null }>({ spots: null, active: null });
+
+  // 색 이미지는 만드는 데 오래 걸리므로 점수가 바뀌었을 때만 다시 만든다.
+  const paintHeat = () => {
+    const { current } = kit;
+    if (!current || !(features?.length || cells.length)) return;
+    const source = features?.length ? features : scores;
+    if (painted.current.source === source && painted.current.color === heatColor) return;
+    painted.current = { source, color: heatColor };
+    const image = features?.length ? featureImage(features, heatColor) : heatImage(cells, scores, cellSize, heatColor);
+    current.heat.show(image.url, image.bounds);
+  };
 
   const draw = () => {
     const { current } = kit;
     if (!current) return;
-    if (features?.length || cells.length) {
-      const image = features?.length ? featureImage(features, heatColor) : heatImage(cells, scores, cellSize, heatColor);
-      current.heat.show(image.url, image.bounds);
-    }
+    paintHeat();
     if (homes?.length && view.current) {
       const { south, west, north, east } = view.current;
       current.buildings.show(homesImage(homes, view.current), [[south, west], [north, east]]);
@@ -221,7 +231,8 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, she
 
   const pin = () => {
     const { current } = kit;
-    if (!current) return;
+    if (!current || (pinned.current.spots === spots && pinned.current.active === activeSpot)) return;
+    pinned.current = { spots, active: activeSpot };
     const { kakao, map } = current;
     pins.current.forEach((item) => item.setMap(null));
     pins.current = spots.map(({ spot, rank }) => {

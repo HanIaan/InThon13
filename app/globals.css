@@ -258,7 +258,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .peek-legend { position: absolute; top: 12px; right: 24px; left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 0; color: var(--muted); font-size: 11px; font-weight: 600; }
 .peek-legend i { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: linear-gradient(90deg, #d0d0cc, #a5d7af, #2da069); }
 .page.home .peek-legend i { background: linear-gradient(90deg, #e5484d, #f0c454, #30a46c); }
-.peek-legend small { font-size: inherit; white-space: nowrap; }
+.peek-legend small { font-size: inherit; text-align: left; white-space: nowrap; }
 .peek-legend small:last-child { text-align: right; }
 .peek.hidden { opacity: 0; pointer-events: none; }
 
@@ -365,6 +365,14 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 /* 첫 로드 위치가 끌려가지 않도록 앱이 시작된 뒤에 켠다. 마우스·트랙패드는 useGlideScroll이 맡는다. */
 @media (pointer: coarse) {
   html.snapping { scroll-snap-type: y mandatory; }
+  /* 터치 기기에서는 지도를 끌 때마다 다시 합성되는 효과를 빼서 끊기지 않게 한다. */
+  .heat { filter: none; opacity: 0.42; -webkit-mask-image: none; mask-image: none; }
+  .rest-map .heat { opacity: 0.5; mix-blend-mode: normal; }
+  .glass, .peek, .sheet-glass, .search-list, .dayview .dv-panel, .dayview .dv-bar, .dayview .mode-switch { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .glass, .peek { background: rgba(255, 255, 255, 0.94); }
+  .sheet-glass { background: rgb(244, 246, 248); }
+  .search-list { background: rgba(255, 255, 255, 0.96); }
+  .dayview .dv-panel, .dayview .dv-bar { background: rgba(20, 22, 26, 0.92); }
 }
 
 .home-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; pointer-events: auto; }
@@ -509,17 +517,27 @@ html.locked { overflow: hidden; }
 
 @media (max-aspect-ratio: 1/1) {
   .switch { top: 12px; }
-  /* 점수 탭 92+14, 검색창 54, 시간 바 52, 간격 10씩 */
-  .spots { top: auto; right: auto; left: 50%; bottom: 232px; width: calc(100vw / var(--ui) - 24px); max-width: 480px; transform: translateX(-50%); padding: 8px; }
+  /* 추천 장소는 스위치 바로 아래에 두고, 지도 버튼과 내 감각은 그 아래로 내린다. */
+  .spots { top: 66px; right: auto; left: 50%; bottom: auto; width: calc(100vw / var(--ui) - 24px); max-width: 480px; transform: translateX(-50%); padding: 7px 7px 6px; }
   .spots { translate: none !important; }
   .spots.closed { transform: translateX(-50%); }
   .spots-toggle { display: none; }
-  .spots header { display: none; }
-  .spots ol { display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x pan-y; cursor: grab; }
+  .spots header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 6px 5px; pointer-events: none; }
+  .spots h2 { font-size: 14px; }
+  .spots header p { margin: 0; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  /* 확대 버튼과 위치 버튼의 오른쪽을 추천 패널 끝에 맞춘다. 지도 버튼은 원래 오른쪽 3px에 붙어 있다. */
+  .map div:has(> button[title="확대"]) { transform: translateX(calc(3px - 12px * var(--ui))); }
+  .locate { right: calc(12px * var(--ui) + 40px); }
+  .rest-map ~ .tune { top: 186px; }
+  .rest-map ~ .locate { top: calc(186px * var(--ui)); }
+  .rest-map .map div:has(> button[title="확대"]) { transform: translate(calc(3px - 12px * var(--ui)), calc(183px * var(--ui))); }
+  .spots ol { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x pan-y; cursor: grab; }
   .spots ol::-webkit-scrollbar { display: none; }
   .spots ol:active { cursor: grabbing; }
   .spots li { flex: 0 0 80%; scroll-snap-align: start; }
-  .spots li button { height: 100%; padding: 14px 10px; }
+  /* 다음 장소와 섞이지 않게 카드마다 바탕을 깔고, 고른 카드만 더 밝힌다. */
+  .spots li button { height: 100%; padding: 6px 12px; background: rgba(255, 255, 255, 0.5); box-shadow: inset 0 0 0 1px rgba(16, 20, 24, 0.07); }
+  .spots li button.on { background: #fff; box-shadow: inset 0 0 0 1.5px rgba(16, 20, 24, 0.14); }
   .spots > .hint { padding: 5px 6px 0; }
     .switch button { min-width: 74px; padding: 8px 18px; }
   .tune { top: 70px; left: 12px; transform: none; width: 214px; padding: 12px 16px; border-radius: 20px; }
@@ -613,7 +631,7 @@ html.locked { overflow: hidden; }
   .page.home .sun-top { align-items: flex-start; }
   .page.home .sun-line, .page.home .sensor { margin-top: auto; }
   .page.home .sun-line { height: 14px; }
-  .page.home .sensor-chart { height: 14px; margin-top: 0; }
+  .page.home .sensor-chart { height: 26px; margin-top: 0; }
   .page.home .sun-axis, .page.home .sun-marks { height: 15px; margin: 3px 0 0; }
   .page.home .side .sense-tune { grid-column: 1 / -1; }
   .dv-bar { flex-wrap: wrap; gap: 4px 8px; border-radius: 18px; }
@@ -635,7 +653,6 @@ html.locked { overflow: hidden; }
   .sun-marks span { font-size: 10px; }
   .page.home .side h2 { margin-bottom: 2px; }
   .night-window { display: none; }
-  .spots::before { content: ""; display: block; width: 36px; height: 4px; margin: 0 auto 7px; background: rgba(16, 20, 24, 0.22); border-radius: 2px; }
   .hint { font-size: 12px; }
 }
 

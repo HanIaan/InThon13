@@ -115,6 +115,10 @@ export default function Home() {
   const [locating, setLocating] = useState(false);
   const [spotsOpen, setSpotsOpen] = useState(true);
   const [spotsOffset, setSpotsOffset] = useState({ x: 0, y: 0 });
+  // 세로 화면에서는 내 감각을 접어 두어 핀이 가려지지 않게 한다.
+  useEffect(() => {
+    if (window.matchMedia("(max-aspect-ratio: 1/1)").matches) setTuneOpen(false);
+  }, []);
   const zoomMap = useRef<((step: number) => void) | null>(null);
   const [myPoint, setMyPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [applied, setApplied] = useState(sensitivity);

@@ -3,7 +3,8 @@ import type { Cell } from "./data";
 
 export type HeatColor = (score: number) => [number, number, number];
 
-const MAX_CANVAS = 2048;
+// 경계를 번지게 그리는 이미지라 이 크기면 충분하고, 만드는 시간이 크게 줄어든다.
+const MAX_CANVAS = 1024;
 const SMOOTH_STEPS = 3;
 const SMOOTH_CELLS = 1.6;
 

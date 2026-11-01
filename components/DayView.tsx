@@ -701,7 +701,8 @@ export default function DayView({
   const wantSound = useRef(false);
   const room = useRef<HTMLDivElement>(null);
   const header = useRef<HTMLElement>(null);
-  const panel = useRef<HTMLElement>(null);
+  const bar = useRef<HTMLElement>(null);
+  const infoToggle = useRef<HTMLButtonElement>(null);
   const windowViewport = useRef<WindowViewport | null>(null);
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
   const look = useRef({ yaw: 0, pitch: 0 });
@@ -730,15 +731,17 @@ export default function DayView({
   const soundState = useRef({ minute, date, db: noise.db ?? 0, referenceDb: noiseBySlot[slot] ?? 0, floor: input.floor });
   soundState.current = { minute, date, db: noise.db ?? 0, referenceDb: noiseBySlot[slot] ?? 0, floor: input.floor };
 
-  // 세로 화면에서는 사진을 유리창 중심의 16:9로 잘라 머리글과 조작판 사이 가운데에 놓는다.
+  // 세로 화면에서는 사진을 유리창 중심의 16:9로 잘라 머리글과 시간 바 사이 가운데에 놓는다.
   const fitRoom = () => {
     const box = room.current;
     if (!box) return null;
     box.removeAttribute("style");
-    if (!window.matchMedia("(max-aspect-ratio: 1/1)").matches || !header.current || !panel.current) return null;
+    if (!window.matchMedia("(max-aspect-ratio: 1/1)").matches || !header.current) return null;
     const { glass } = PHOTO;
-    const top = header.current.getBoundingClientRect().bottom + DISPLAY_GAP;
-    const bottom = panel.current.getBoundingClientRect().top - DISPLAY_GAP;
+    // 환경 정보는 영상 위에 겹쳐 열리므로 영상 자리는 머리글과 시간 바 사이로 고정한다.
+    const toggle = infoToggle.current?.getBoundingClientRect().bottom ?? 0;
+    const top = Math.max(header.current.getBoundingClientRect().bottom, toggle) + DISPLAY_GAP;
+    const bottom = (bar.current?.getBoundingClientRect().top ?? window.innerHeight) - DISPLAY_GAP;
     const width = Math.min(window.innerWidth, (bottom - top) * DISPLAY_RATIO);
     const height = width / DISPLAY_RATIO;
     const photoWidth = (height * PHOTO.width) / PHOTO.height;
@@ -943,8 +946,8 @@ export default function DayView({
         <button className="dv-close" onClick={onClose} aria-label="닫기">×</button>
       </header>
 
-      <button className="dv-info-toggle" aria-expanded={panelOpen} aria-controls="dayview-environment" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? "정보 닫기" : "환경 정보"}</button>
-      <aside ref={panel} id="dayview-environment" className={`dv-panel ${panelOpen ? "open" : ""}`}>
+      <button ref={infoToggle} className="dv-info-toggle" aria-expanded={panelOpen} aria-controls="dayview-environment" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? "정보 닫기" : "환경 정보"}</button>
+      <aside id="dayview-environment" className={`dv-panel ${panelOpen ? "open" : ""}`}>
         <ModeSwitch label="날짜" options={DATES} value={date} onChange={setDate} />
         <div className="dv-home">
           <FloorInput input={input} maxFloor={maxFloor} onChange={onInput} />
@@ -963,7 +966,7 @@ export default function DayView({
         <details className="dv-estimate"><summary>일조·소음 추정 기준</summary><p>햇빛은 시간·창 방향·층 높이와 주변 건물·지형을 반영합니다. 방 크기와 창 크기는 사진에 맞춘 예시입니다. 일조 시간은 선택한 날 08–16시 중 창 일부에 직사광이 드는 시간입니다.</p><p>{noise.roadM === null ? "가까운 도로 정보가 없어 층별 소음 보정은 적용하지 않았습니다." : `가까운 도로 약 ${Math.round(noise.roadM)}m 기준, 1층 대비 ${noise.deltaDb.toFixed(1)}dB 거리 보정. 도로 소음이 주된 소리라는 가정이며 건물 차폐·반사에 따라 실제 고층 소음은 커질 수도 있습니다.`} 창 밖 기준으로, 실내 방음과 창문 개폐는 반영하지 않습니다. 재생 음량은 실제 dB를 재현하지 않습니다.</p><p>건물 윤곽·높이와 지형은 지도 데이터를 사용합니다. 외벽, 옥상 설비, 간판과 수목은 동네 분위기를 표현한 예시이며 실제 외관·상호와 다를 수 있습니다.</p></details>
       </aside>
 
-      <footer className="dv-bar">
+      <footer ref={bar} className="dv-bar">
         <button className="dv-play" onClick={() => setPlaying(!playing)} aria-label={playing ? "멈춤" : "하루 재생"}>{playing ? "❚❚" : "▶"}</button>
         <strong>{clock}</strong>
         <div className="dv-speed" role="group" aria-label="재생 속도">

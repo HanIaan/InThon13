@@ -112,8 +112,7 @@ export function daylightScore(winterMinutes: number) {
 
 export function homeVerdict(score: number) {
   if (score >= 80) return "살기 좋아요";
-  if (score >= 65) return "무난해요";
-  if (score >= 45) return "확인이 필요해요";
+  if (score >= 45) return "무난해요";
   return "추천하지 않아요";
 }
 
