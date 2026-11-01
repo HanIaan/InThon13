@@ -35,8 +35,8 @@ type Props = {
 
 // 카카오 지도 레벨과 앱의 줌 단계는 합이 19가 되도록 맞춘다.
 const ZOOM_SUM = 19;
-const REST_LEVEL = 4;
-const HOME_LEVEL = 3;
+// 건물이 보이는 레벨이다. 두 탭이 같은 크기로 시작해 전환해도 지도가 튀지 않는다.
+const PLACE_LEVEL = 3;
 const MAX_LEVEL = 9;
 const HOME_CANVAS = 1600;
 // 건물을 고를 때 윤곽 밖으로 벗어나도 허용하는 화면 거리다.
@@ -122,8 +122,8 @@ function imageOverlay(kakao: any, className: string) {
   return overlay;
 }
 
-// 유리판을 끝까지 올렸을 때의 창 가운데에 대상이 오도록 지도 중심을 옮긴다.
-function openingShift(map: any, host: HTMLElement) {
+// 유리판을 끝까지 올렸을 때 창 가운데가 지도 가운데에서 떨어진 만큼이다.
+function openingShift(host: HTMLElement) {
   const opening = document.querySelector(".opening");
   const sheet = opening?.closest(".sheet");
   if (!opening || !sheet) return { x: 0, y: 0 };
@@ -149,8 +149,8 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, she
   const zoomControl = useRef<any>(null);
   const outline = useRef<any>(null);
   const placed = useRef("");
-  const latest = useRef({ onPoint, onHome, onView, onSpot, homes, activeHome, focusPoint });
-  latest.current = { onPoint, onHome, onView, onSpot, homes, activeHome, focusPoint };
+  const latest = useRef({ onPoint, onHome, onView, onSpot, homes, activeHome, focusPoint, sheetUp });
+  latest.current = { onPoint, onHome, onView, onSpot, homes, activeHome, focusPoint, sheetUp };
   const hover = useRef<any>(null);
   const view = useRef<MapView | null>(null);
   const redraw = useRef<() => void>(() => {});
@@ -176,9 +176,10 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, she
   redraw.current = draw;
 
   // 대상이 놓이는 화면 위치다. 고정 핀도 이 자리에 선다.
+  // 시트를 내리면 화면 가운데, 올리면 지도 창 가운데다.
   const focusSpot = () => {
     const { clientWidth, clientHeight } = host.current!;
-    const shift = openingShift(kit.current!.map, host.current!);
+    const shift = latest.current.sheetUp ? openingShift(host.current!) : { x: 0, y: 0 };
     return { x: clientWidth / 2 + shift.x, y: clientHeight / 2 + shift.y };
   };
 
@@ -212,9 +213,8 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, she
     if (placed.current === key) return;
     const first = !placed.current;
     placed.current = key;
-    const level = homes ? HOME_LEVEL : REST_LEVEL;
-    const zoomed = map.getLevel() > level;
-    if (zoomed) map.setLevel(level);
+    const zoomed = map.getLevel() > PLACE_LEVEL;
+    if (zoomed) map.setLevel(PLACE_LEVEL);
     // 핀은 제자리에 있고 지도가 밀려 오게 한다.
     centerOn(focusPoint, !first && !zoomed);
   };
@@ -282,7 +282,7 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, she
     let removePinch = () => {};
     loadKakao().then((kakao) => {
       if (!alive || !host.current) return;
-      const map = new kakao.maps.Map(host.current, { center: new kakao.maps.LatLng(37.5865, 127.0295), level: REST_LEVEL });
+      const map = new kakao.maps.Map(host.current, { center: new kakao.maps.LatLng(37.5865, 127.0295), level: PLACE_LEVEL });
       map.setMaxLevel(MAX_LEVEL);
       map.setZoomable(false);
       // 휴대폰에서는 한 손가락으로 민 동작이 지도 이동이 아니라 페이지 스크롤이 되게 한다.
@@ -433,6 +433,12 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, she
       kit.current = null;
     };
   }, []);
+
+  // 시트를 올리고 내릴 때 핀과 대상을 새 자리로 함께 옮긴다.
+  useEffect(() => {
+    standPin();
+    if (focusPoint) centerOn(focusPoint, true);
+  }, [sheetUp]);
 
   // 정보창이 올라오면 지도 창 안의 버튼이 대신하므로 지도 버튼을 숨긴다.
   useEffect(() => {

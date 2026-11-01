@@ -85,7 +85,7 @@ export function LocateButton({ busy, onClick }: { busy: boolean; onClick: () => 
 
 export function TopSwitch({ isHome, sheetUp, onChange }: { isHome: boolean; sheetUp: boolean; onChange: (tab: "rest" | "home") => void }) {
   return (
-    <div className={`switch glass ${sheetUp && !isHome ? "on-opening" : ""}`} role="tablist" aria-label="보기 선택">
+    <div className={`switch glass ${sheetUp ? "on-opening" : ""}`} role="tablist" aria-label="보기 선택">
       <button role="tab" aria-selected={!isHome} onClick={() => onChange("rest")}>휴식</button>
       <button role="tab" aria-selected={isHome} onClick={() => onChange("home")}>주거</button>
     </div>
@@ -97,13 +97,11 @@ const DRAG_MIN_PX = 4;
 export function TuneCard({
   open,
   hidden,
-  isHome,
   onToggle,
   children,
 }: {
   open: boolean;
   hidden: boolean;
-  isHome: boolean;
   onToggle: () => void;
   children: ReactNode;
 }) {
@@ -150,17 +148,7 @@ export function TuneCard({
           {open ? "−" : "+"}
         </button>
       </div>
-      {open && (
-        <>
-          {children}
-          {isHome && (
-            <div className="legend">
-              <i />
-              <p><span>잠자리 주의</span><span>잠들기 좋음</span></p>
-            </div>
-          )}
-        </>
-      )}
+      {open && children}
     </aside>
   );
 }
@@ -201,6 +189,7 @@ export function Dock({
   onMiss,
   near,
   compact,
+  onPreview,
 }: {
   isHome: boolean;
   showControls: boolean;
@@ -214,6 +203,8 @@ export function Dock({
   near?: { lat: number; lng: number };
   // 휴대폰 정보창 안에 작게 넣을 때 쓴다.
   compact?: boolean;
+  // 주거에서 시간 바 자리에 놓는 감각 미리보기다.
+  onPreview?: () => void;
 }) {
   const [results, setResults] = useState<SearchPlace[]>([]);
 
@@ -242,9 +233,9 @@ export function Dock({
   };
 
   return (
-    <div className={compact ? "sheet-dock" : `dock ${isHome ? "" : "rest"} ${showControls ? "" : `up ${isHome ? "" : "on-opening"}`}`}>
+    <div className={compact ? "sheet-dock" : `dock ${showControls ? "" : "up on-opening"}`}>
       {isHome ? (
-        showControls && <p className="slots basis glass">건물을 눌러 선택</p>
+        <button className="day-open" onClick={onPreview}>감각 미리보기</button>
       ) : (
         <TimeBar hour={hour} onHour={onHour} />
       )}

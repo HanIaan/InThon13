@@ -3,6 +3,27 @@
 import type { ReactNode } from "react";
 import { clockLabel, DIRECTIONS, formatDuration, type Direction, type HomeInput, type SensorCard, type SunReport } from "@/lib/home-report";
 
+export function FloorSelect({
+  input,
+  maxFloor,
+  onChange,
+}: {
+  input: HomeInput;
+  maxFloor: number;
+  onChange: (next: HomeInput) => void;
+}) {
+  return (
+    <label className="floor-select">
+      <span>내 층</span>
+      <select value={input.floor} onChange={(e) => onChange({ ...input, floor: Number(e.target.value) })} aria-label="층수">
+        {Array.from({ length: maxFloor }, (_, i) => i + 1).map((floor) => (
+          <option key={floor} value={floor}>{floor}층</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function FloorInput({
   input,
   maxFloor,
@@ -83,6 +104,14 @@ export function ModeSwitch<T extends string>({
   );
 }
 
+// 측정이 있는 시간 중 가장 시끄러운 때와 조용한 때를 고른다.
+function noiseHours(hourly: (number | null)[]) {
+  const measured = hourly.flatMap((db, hour) => (db === null ? [] : [{ db, hour }]));
+  if (measured.length < 2) return null;
+  const sorted = [...measured].sort((a, b) => a.db - b.db);
+  return { quiet: sorted[0].hour, loud: sorted[sorted.length - 1].hour };
+}
+
 export function NoiseCard({
   isDay,
   noise,
@@ -99,6 +128,7 @@ export function NoiseCard({
   daylight: { sunrise: number; sunset: number };
 }) {
   const isDayHour = (hour: number) => hour >= Math.floor(daylight.sunrise) && hour < Math.ceil(daylight.sunset);
+  const hours = sensor && noiseHours(sensor.hourly);
   return (
     <div className="report-card">
       <h2>소음 점수<b>{score ?? "-"}</b></h2>
@@ -114,6 +144,7 @@ export function NoiseCard({
             <span style={{ left: `${(daylight.sunrise / 24) * 100}%` }}>일출 {clockLabel(daylight.sunrise)}</span>
             <span style={{ left: `${(daylight.sunset / 24) * 100}%` }}>일몰 {clockLabel(daylight.sunset)}</span>
           </p>
+          {hours && <p className="sensor-note">{hours.loud}시에 가장 크고 {hours.quiet}시에 가장 조용해요 · 가까운 센서 {sensor.distance}m</p>}
         </div>
       )}
     </div>

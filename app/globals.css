@@ -89,9 +89,6 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .range input::-moz-range-track { height: 3px; background: rgba(16, 20, 24, 0.18); border-radius: 2px; }
 .range input::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -7px; background: var(--ink); border: 3px solid #fff; border-radius: 50%; box-shadow: 0 1px 5px rgba(16, 20, 24, 0.35); appearance: none; -webkit-appearance: none; }
 .range input::-moz-range-thumb { width: 10px; height: 10px; background: var(--ink); border: 3px solid #fff; border-radius: 50%; box-shadow: 0 1px 5px rgba(16, 20, 24, 0.35); }
-.legend { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); font-size: 11px; font-weight: 500; }
-.legend i { display: block; height: 4px; border-radius: 2px; background: linear-gradient(90deg, #e5484d, #f0c454, #30a46c); }
-.legend p { display: flex; justify-content: space-between; margin-top: 6px; }
 
 .sheet-dock { display: none; }
 .dock {
@@ -106,10 +103,6 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
   width: min(480px, calc(100vw - 660px));
   min-width: 320px;
 }
-.slots { display: flex; gap: 2px; padding: 4px; border-radius: 999px; }
-.slots button { padding: 6px 15px; border-radius: 999px; color: var(--muted); font-size: 13px; font-weight: 600; }
-.slots button.on { background: var(--ink); color: #fff; }
-.basis { padding: 7px 14px; font-size: 13px; font-weight: 600; }
 .time { box-sizing: border-box; display: flex; align-items: center; gap: 14px; width: 100%; height: 52px; padding: 0 18px; border-radius: 22px; }
 .time-flat { display: none; height: 44px; margin-top: 14px; padding: 0; }
 .time-now { flex: none; display: grid; min-width: 62px; line-height: 1.2; }
@@ -169,7 +162,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 /* 카카오 확대 버튼의 인라인 모서리를 앱의 카드 모양에 맞춘다. */
 .map div:has(> button[title="확대"]) { overflow: hidden; border-radius: 14px !important; box-shadow: 0 8px 28px rgba(16, 20, 24, 0.12) !important; }
 /* 지도 위 고정 핀이다. 끝이 가리키는 곳을 고르고, 지도를 끄는 동안에는 위로 뜬다. */
-.map-pin { position: absolute; z-index: 1; width: 0; height: 0; pointer-events: none; }
+.map-pin { position: absolute; z-index: 1; width: 0; height: 0; pointer-events: none; transition: left 0.3s ease, top 0.3s ease; }
 .map-pin[hidden] { display: none; }
 .map-pin i { position: absolute; top: -3px; left: -8px; width: 16px; height: 6px; background: rgba(16, 20, 24, 0.4); border-radius: 50%; filter: blur(1.5px); transition: transform 0.2s, opacity 0.2s; }
 .map-pin svg { position: absolute; bottom: 0; left: -16px; display: block; transition: transform 0.26s cubic-bezier(0.34, 1.9, 0.64, 1); }
@@ -241,14 +234,14 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .peek {
   position: absolute;
   z-index: 2;
-  top: -80px;
+  top: -112px;
   right: 24px;
   display: flex;
   align-items: center;
   gap: 12px;
   max-width: min(400px, calc(50vw / var(--ui) - 230px));
-  height: 80px;
-  padding: 0 24px;
+  height: 112px;
+  padding: 32px 24px 0;
   background: rgba(244, 246, 248, 0.94);
   border-radius: 14px 14px 0 0;
   box-shadow: 0 -4px 16px rgba(16, 20, 24, 0.14);
@@ -262,9 +255,9 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .peek span { min-width: 0; overflow: hidden; font-size: 17px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .peek strong { flex: none; font-size: 52px; line-height: 1; font-weight: 700; letter-spacing: -0.03em; }
 .peek em { flex: none; font-size: 20px; font-style: normal; font-weight: 600; }
-.peek.with-legend { top: -112px; height: 112px; padding-top: 32px; }
 .peek-legend { position: absolute; top: 12px; right: 24px; left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 0; color: var(--muted); font-size: 11px; font-weight: 600; }
 .peek-legend i { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: linear-gradient(90deg, #d0d0cc, #a5d7af, #2da069); }
+.page.home .peek-legend i { background: linear-gradient(90deg, #e5484d, #f0c454, #30a46c); }
 .peek-legend small { font-size: inherit; white-space: nowrap; }
 .peek-legend small:last-child { text-align: right; }
 .peek.hidden { opacity: 0; pointer-events: none; }
@@ -305,6 +298,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .sensor-chart { display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 2px; height: 56px; margin-top: 14px; border-bottom: 1px solid var(--line); }
 .sensor-chart i { display: block; background: var(--ink); border-radius: 2px 2px 0 0; opacity: 0.22; transition: opacity 0.25s; }
 .sensor-chart i.on { opacity: 0.8; }
+.sensor-note { display: none; margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.4; word-break: keep-all; }
 .sun-marks { position: relative; height: 15px; margin: 3px 0 0; color: var(--muted); font-size: 11px; }
 .sun-marks span { position: absolute; white-space: nowrap; transform: translateX(-50%); }
 .slot { display: grid; min-height: 196px; }
@@ -373,8 +367,14 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
   html.snapping { scroll-snap-type: y mandatory; }
 }
 
-.side-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-.day-open { padding: 0 14px; background: var(--ink); border-radius: 12px; color: #fff; font-size: 13px; font-weight: 600; }
+.home-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; pointer-events: auto; }
+.home-controls .mode-switch { padding: 4px; border-radius: 999px; }
+.home-controls .mode-switch button { border-radius: 999px; }
+.floor-select { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 14px; background: rgba(16, 20, 24, 0.07); border-radius: 999px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.floor-select span { flex: none; }
+.floor-select select { min-width: 0; height: 42px; padding: 0 2px; background: none; border: 0; outline: 0; color: var(--ink); font: inherit; font-size: 14px; font-weight: 700; text-align: right; cursor: pointer; }
+.home-controls .day-open { display: none; }
+.day-open { grid-column: 1 / -1; width: 100%; height: 52px; box-shadow: 0 8px 24px rgba(16, 20, 24, 0.22); background: var(--ink); border-radius: 999px; color: #fff; font-size: 15px; font-weight: 700; }
 html.locked { overflow: hidden; }
 .dayview { position: fixed; z-index: 100; inset: 0; overflow: hidden; background: #05070a; color: #fff; }
 .room-bg { position: absolute; inset: 0; filter: blur(46px) brightness(0.62); transform: scale(1.15); }
@@ -415,6 +415,12 @@ html.locked { overflow: hidden; }
 .dv-times button { padding: 6px 9px; border-radius: 999px; color: rgba(255, 255, 255, 0.8); font-size: 12px; font-weight: 600; }
 .dv-times button.on { background: #fff; color: #101418; }
 
+/* 주거 탭도 휴식처럼 내 감각을 오른쪽 맨 아래에 세로로 둔다. */
+@media (min-aspect-ratio: 5/4) {
+  .page.home .side { display: flex; flex-direction: column; gap: 8px; align-self: stretch; height: 100%; }
+  .page.home .side .sense-tune { grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: auto; }
+}
+
 /* 휴식 탭 3칸 화면: 왼쪽과 오른쪽 칸이 같은 줄을 써서 점수와 지금 감각의 높이가 맞는다. */
 @media (min-aspect-ratio: 5/4) {
   .page.rest .sheet-grid {
@@ -433,14 +439,14 @@ html.locked { overflow: hidden; }
   .page.rest .side .sense-tune { grid-area: tune; align-self: end; pointer-events: auto; }
 }
 
-/* 휴식 탭: PC 비율보다 좁아지면 정보 칸이 먼저 줄어 지도 비율을 지킨다. */
+/* PC 비율보다 좁아지면 정보 칸이 먼저 줄어 지도 비율을 지킨다. */
 @media (min-aspect-ratio: 5/4) and (max-aspect-ratio: 1599/1000) {
-  .page.rest .sheet-grid { grid-template-columns: minmax(210px, 1fr) minmax(0, 1.84fr) minmax(210px, 1fr); column-gap: 24px; }
+  .page .sheet-grid { grid-template-columns: minmax(210px, 1fr) minmax(0, 1.84fr) minmax(210px, 1fr); column-gap: 24px; }
 }
 
 /* 더 좁으면 정보를 왼쪽에 모으고 지도를 오른쪽 끝까지 채운다. 1:1은 세로 규칙이 맡는다. */
 @media (min-aspect-ratio: 1/1) and (max-aspect-ratio: 5/4) {
-  .page.rest .sheet-grid {
+  .page .sheet-grid {
     grid-template-columns: 300px minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas: "story opening" "side opening";
@@ -449,21 +455,41 @@ html.locked { overflow: hidden; }
     gap: var(--stack-gap) 24px;
     padding: 56px 0 14px 32px;
   }
-  .page.rest .story, .page.rest .side { gap: var(--stack-gap); }
-  .page.rest .place-head { gap: 4px; }
-  .page.rest .place-head h1 { font-size: 26px; }
-  .page.rest .facts { gap: 1px; }
-  .page.rest .report-card h2 { margin-bottom: 4px; }
-  .page.rest .report-card > h2 + .levels { margin-top: 2px; }
-  .page.rest .score-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 0; }
-  .page.rest .score-block .where { flex-basis: 100%; }
-  .page.rest .score { margin: 0; font-size: 56px; }
-  .page.rest .sense-tune { gap: 4px; }
-  .page.rest .sense-tune .range input { height: 18px; }
-  .page.rest .story, .page.rest .side { min-height: 0; overflow: hidden auto; }
+  .page .story, .page .side { gap: var(--stack-gap); }
+  .page .place-head { gap: 4px; }
+  .page .place-head h1 { font-size: 26px; }
+  .page .facts { gap: 1px; }
+  .page .report-card h2 { margin-bottom: 4px; }
+  .page .report-card > h2 + .levels { margin-top: 2px; }
+  .page .score-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 0; }
+  .page .score-block .where { flex-basis: 100%; }
+  .page .score { margin: 0; font-size: 56px; }
+  .page .sense-tune { gap: 4px; }
+  .page .sense-tune .range input { height: 18px; }
+  .page .story, .page .side { min-height: 0; overflow: hidden auto; }
   /* 스위치와 검색바가 지도 창 경계에 걸치지 않게 창 가운데로 옮긴다. 178px은 왼쪽 칸 폭의 절반이다. */
   .switch.on-opening { top: 66px; transform: translateX(calc(-50% + 178px)); }
   .dock.on-opening { transform: translateX(calc(-50% + 178px)); }
+  /* 주거는 묶음이 많아 간격을 좁혀 왼쪽 칸에 다 넣는다. */
+  .page.home .sheet-grid { --stack-gap: 20px; }
+  .page.home .floor-select select { height: 36px; }
+  .page.home .mode-switch button { padding: 6px 0; }
+  /* 좁은 칸에서는 막대를 빼고 소음은 시간대를 글로 알려 준다. */
+  .page.home .sun-line, .page.home .sun-axis, .page.home .sensor-chart, .page.home .sun-marks { display: none; }
+  .page.home .sensor-note { display: block; }
+  .page.home .slot { min-height: 0; }
+  /* 일조와 소음이 같은 간격으로 읽히도록 나침반을 글 높이에 맞춘다. */
+  .page.home .sun-top { align-items: flex-start; }
+  .page.home .dial { width: 62px; height: 62px; }
+  .page.home .dial i { top: 15px; left: 27px; width: 8px; height: 32px; }
+  .page.home .dial button { width: 20px; height: 20px; font-size: 10px; }
+  .page.home .dial .north { top: 0; left: 21px; }
+  .page.home .dial .south { bottom: 0; left: 21px; }
+  .page.home .dial .east { top: 21px; right: 0; }
+  .page.home .dial .west { top: 21px; left: 0; }
+  .page.home .sensor-note { margin-top: 2px; }
+  .page.home .sense-tune { grid-template-columns: minmax(0, 1fr); }
+  .page.home .card-value { font-size: 22px; }
   .page.rest .only-wide, .page.rest .hide-stack { display: none; }
   .page.rest .report-card.only-stack { display: block; }
   .page.rest .slot.hide-wide { display: grid; }
@@ -488,16 +514,14 @@ html.locked { overflow: hidden; }
   .tune:not(.open) { width: auto; }
   .tune:not(.open) .tune-head { gap: 12px; }
   .range { margin-top: 10px; }
-  .peek { top: -62px; right: max(12px, calc(50vw / var(--ui) - 240px)); gap: 10px; max-width: min(480px, calc(100vw / var(--ui) - 24px)); height: 62px; padding: 0 18px; }
-  .peek.with-legend { top: -92px; height: 92px; padding-top: 28px; }
+  .peek { top: -92px; right: max(12px, calc(50vw / var(--ui) - 240px)); gap: 10px; max-width: min(480px, calc(100vw / var(--ui) - 24px)); height: 92px; padding: 28px 18px 0; }
   .peek-legend { top: 8px; right: 18px; left: 18px; }
   .peek span { font-size: 15px; }
   .peek strong { font-size: 38px; }
   .peek em { font-size: 16px; }
-  .dock { left: 50%; right: auto; bottom: 76px; width: calc(100vw / var(--ui) - 24px); max-width: 480px; min-width: 0; transform: translateX(-50%); }
+  .dock { left: 50%; right: auto; bottom: 106px; width: calc(100vw / var(--ui) - 24px); max-width: 480px; min-width: 0; transform: translateX(-50%); }
   .search input { height: 40px; }
   .leaflet-top.leaflet-right { display: none; }
-  .dock.rest { bottom: 106px; }
   .dock.up { display: none; }
   .sheet-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -510,10 +534,16 @@ html.locked { overflow: hidden; }
   .sheet-grid.resting { opacity: 0; pointer-events: none; }
   .story { display: contents; }
   .place-head { grid-area: head; pointer-events: auto; }
-  .page.home .place-head h1 { padding-right: 104px; }
   .score-block { grid-area: score; pointer-events: auto; }
     .sense-tune { grid-area: tune; pointer-events: auto; }
-  .floor { grid-area: head; justify-self: end; align-self: start; pointer-events: auto; }
+  /* 휴식의 작은 검색창 자리, 점수 오른쪽에 둔다. */
+  .home-controls { grid-area: score; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-self: end; justify-self: end; gap: 8px; width: 196px; }
+  .floor-select { padding: 0 8px 0 12px; font-size: 12px; }
+  .floor-select select { flex: 1; height: 34px; font-size: 13px; }
+  .home-controls .mode-switch { padding: 3px; }
+  .home-controls .mode-switch button { padding: 5px 0; font-size: 13px; }
+  /* 휴대폰 정보창에서는 검색바가 숨으므로 여기서 연다. */
+  .home-controls .day-open { display: block; height: 34px; box-shadow: none; font-size: 13px; }
   .score-block { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 10px; padding: 0; }
   .score-block .where { grid-column: 1 / -1; }
   .score-block .score { grid-row: span 3; margin: 0; font-size: 46px; }
@@ -526,14 +556,16 @@ html.locked { overflow: hidden; }
   .place-head .where, .place-head .no-facts, .facts div + div { display: none; }
   .facts dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .side .levels { margin: 0; }
-  .page.rest .sheet-grid {
+  /* 두 탭의 지도 창이 같은 크기가 되도록 높이를 고정한다. */
+  .page .sheet-grid {
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: 88px 78px clamp(180px, calc(100dvh / var(--ui) - 546px), 300px) auto;
     grid-template-areas: "head head" "score score" "opening opening" "side tune";
     gap: 16px 28px;
     padding: 62px 26px calc(22px + env(safe-area-inset-bottom));
   }
-  .page.rest .place-head { gap: 8px; }
+  .page .place-head { gap: 8px; }
+  .page .place-head h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .page.rest .side { gap: 16px; }
   .page.rest .only-wide, .page.rest .hide-portrait { display: none; }
   .page.rest .slot.hide-wide { display: grid; }
@@ -541,9 +573,9 @@ html.locked { overflow: hidden; }
   .page.rest .now-side { order: -1; }
   .page.rest .side .report-card h2 { margin-bottom: 6px; }
   .page.rest .sense-tune { padding-left: 20px; border-left: 1px solid var(--line); }
-  .page.rest .score-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
-  .page.rest .score-block .where { flex-basis: 100%; }
-  .page.rest .score-block .verdict { font-size: 15px; }
+  .page .score-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+  .page .score-block .where { flex-basis: 100%; }
+  .page .score-block .verdict { font-size: 15px; }
   /* 점수 오른쪽 빈자리에 작은 검색창과 시간 바를 둔다. */
   .page.rest .sheet-dock { position: relative; z-index: 31; display: grid; grid-area: score; grid-template-columns: minmax(0, 1fr); align-self: end; justify-self: end; gap: 6px; width: 172px; pointer-events: auto; }
   .sheet-dock .search { order: -1; gap: 4px; height: 36px; padding: 3px; }
@@ -557,8 +589,11 @@ html.locked { overflow: hidden; }
   .sheet-dock .time-sky { top: 6px; height: 12px; }
   .sheet-dock .time-mark { top: 2px; width: 20px; height: 20px; margin-left: -10px; border-width: 2px; }
   .sheet-dock .search-list { top: 42px; right: 0; bottom: auto; left: auto; width: min(300px, calc(100vw / var(--ui) - 52px)); max-height: 260px; }
-  .page.home .side { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
-  .side .side-head { grid-column: 1 / -1; }
+  .page.home .sheet-grid { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .page.home .side { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+  .page.home .card-value { font-size: 18px; white-space: nowrap; }
+  .page.home .card-value small { white-space: normal; }
+  .page.home .side .sense-tune { grid-column: 1 / -1; }
   .dv-bar { flex-wrap: wrap; gap: 4px 8px; border-radius: 18px; }
   .dv-bar input { order: 5; flex-basis: 100%; }
   .dv-times { margin-left: auto; }
@@ -574,12 +609,10 @@ html.locked { overflow: hidden; }
   .dial .south { bottom: 0; left: 24px; }
   .dial .east { top: 24px; right: 0; }
   .dial .west { top: 24px; left: 0; }
-  .page.home .side .report-card { min-height: 156px; }
   .sensor-chart { height: 34px; margin-top: 6px; }
   .sun-marks span { font-size: 10px; }
   .page.home .side h2 { margin-bottom: 2px; }
   .night-window { display: none; }
-  .card-value { font-size: 22px; }
   .spots::before { content: ""; display: block; width: 36px; height: 4px; margin: 0 auto 7px; background: rgba(16, 20, 24, 0.22); border-radius: 2px; }
   .hint { font-size: 12px; }
 }

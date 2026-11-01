@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Dock, LocateButton, SensitivitySliders, TimeBar, TopSwitch, TuneCard, ZoomButtons } from "@/components/Controls";
-import { DirectionDial, FloorInput, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
+import { DirectionDial, FloorSelect, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
 import { GlassSheets, MainSheet } from "@/components/Sheets";
 import {
@@ -578,7 +578,7 @@ export default function Home() {
       {!up && <LocateButton busy={locating} onClick={locate} />}
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
-      <TuneCard open={tuneOpen} hidden={up} isHome={isHome} onToggle={() => setTuneOpen(!tuneOpen)}>
+      <TuneCard open={tuneOpen} hidden={up} onToggle={() => setTuneOpen(!tuneOpen)}>
         {sliders}
       </TuneCard>
 
@@ -607,7 +607,7 @@ export default function Home() {
         />
       )}
 
-      <Dock isHome={isHome} showControls={!up} hour={hour} query={query} onHour={setHour} onQuery={setQuery} onPick={pick} onMiss={() => setToast("검색 결과가 없어요")} near={isHome ? home : point} />
+      <Dock isHome={isHome} showControls={!up} hour={hour} query={query} onHour={setHour} onQuery={setQuery} onPick={pick} onMiss={() => setToast("검색 결과가 없어요")} near={isHome ? home : point} onPreview={() => setDayOpen(true)} />
 
       {target && (
         <GlassSheets isHome={isHome}>
@@ -623,37 +623,40 @@ export default function Home() {
                 <LocateButton busy={locating} onClick={locate} />
               </>
             }
-            legend={isHome ? undefined : ["쉬기 어려움", "쉬기 좋음"]}
+            legend={isHome ? ["잠자리 주의", "잠들기 좋음"] : ["쉬기 어려움", "쉬기 좋음"]}
             tools={!isHome && <Dock isHome={false} showControls hour={hour} query={sheetQuery} onHour={setHour} onQuery={setSheetQuery} onPick={pick} onMiss={() => setToast("검색 결과가 없어요")} near={point} compact />}
             left={
               <>
-                {isHome && (
-                  <FloorInput
-                    input={homeInput}
-                    maxFloor={Number(home.levels) || 30}
-                    onChange={setHomeInput}
-                  />
-                )}
-                {!isHome && hoursCard("only-wide")}
-                {!isHome && nowCard("only-stack")}
-                <div className={`sense-tune ${isHome ? "" : "only-portrait"}`}>
-                  <h2>내 감각</h2>
-                  {sliders}
-                </div>
-              </>
-            }
-            side={
-              isHome ? (
-                <>
-                  <div className="side-head">
+                {isHome ? (
+                  <div className="home-controls">
+                    <FloorSelect
+                      input={homeInput}
+                      maxFloor={Number(home.levels) || 30}
+                      onChange={setHomeInput}
+                    />
                     <ModeSwitch
                       label="낮과 밤"
                       options={[{ id: "day", label: "낮" }, { id: "night", label: "밤" }]}
                       value={view}
                       onChange={setView}
                     />
-                    <button className="day-open" onClick={() => setDayOpen(true)} aria-label="이 집의 하루 보기">하루</button>
+                    <button className="day-open" onClick={() => setDayOpen(true)}>감각 미리보기</button>
                   </div>
+                ) : (
+                  <>
+                    {hoursCard("only-wide")}
+                    {nowCard("only-stack")}
+                    <div className="sense-tune only-portrait">
+                      <h2>내 감각</h2>
+                      {sliders}
+                    </div>
+                  </>
+                )}
+              </>
+            }
+            side={
+              isHome ? (
+                <>
                   <div className="slot">
                     {showDay ? (
                       <SunCard
@@ -673,6 +676,10 @@ export default function Home() {
                     sensor={nearestSensor(home.lat, home.lng)}
                     daylight={sensorDaylight(home.lat, home.lng)}
                   />
+                  <div className="sense-tune">
+                    <h2>내 감각</h2>
+                    {sliders}
+                  </div>
                 </>
               ) : (
                 <>
