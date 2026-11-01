@@ -576,6 +576,8 @@ html.locked { overflow: hidden; }
   .page .score-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
   .page .score-block .where { flex-basis: 100%; }
   .page .score-block .verdict { font-size: 15px; }
+  /* 긴 등급 글자가 오른쪽 조작부에 가려지지 않게 두 줄로 접는다. */
+  .page.home .score-block .verdict { max-width: 72px; font-size: 13px; line-height: 1.25; word-break: keep-all; }
   /* 점수 오른쪽 빈자리에 작은 검색창과 시간 바를 둔다. */
   .page.rest .sheet-dock { position: relative; z-index: 31; display: grid; grid-area: score; grid-template-columns: minmax(0, 1fr); align-self: end; justify-self: end; gap: 6px; width: 172px; pointer-events: auto; }
   .sheet-dock .search { order: -1; gap: 4px; height: 36px; padding: 3px; }
@@ -593,6 +595,14 @@ html.locked { overflow: hidden; }
   .page.home .side { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
   .page.home .card-value { font-size: 18px; white-space: nowrap; }
   .page.home .card-value small { white-space: normal; }
+  /* 일조와 소음을 같은 높이로 두고, 낮과 밤에도 막대 줄이 움직이지 않게 한다. */
+  .page.home .side .slot, .page.home .side > .report-card { min-height: 132px; }
+  .page.home .side .report-card { display: flex; flex-direction: column; height: 100%; }
+  .page.home .sun-top { align-items: flex-start; }
+  .page.home .sun-line, .page.home .sensor { margin-top: auto; }
+  .page.home .sun-line { height: 14px; }
+  .page.home .sensor-chart { height: 14px; margin-top: 0; }
+  .page.home .sun-axis, .page.home .sun-marks { height: 15px; margin: 3px 0 0; }
   .page.home .side .sense-tune { grid-column: 1 / -1; }
   .dv-bar { flex-wrap: wrap; gap: 4px 8px; border-radius: 18px; }
   .dv-bar input { order: 5; flex-basis: 100%; }

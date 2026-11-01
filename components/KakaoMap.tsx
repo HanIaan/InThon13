@@ -284,9 +284,8 @@ function KakaoLayer({ cells, cellSize, scores, features, heatColor, myPoint, she
       if (!alive || !host.current) return;
       const map = new kakao.maps.Map(host.current, { center: new kakao.maps.LatLng(37.5865, 127.0295), level: PLACE_LEVEL });
       map.setMaxLevel(MAX_LEVEL);
-      map.setZoomable(false);
-      // 휴대폰에서는 한 손가락으로 민 동작이 지도 이동이 아니라 페이지 스크롤이 되게 한다.
-      map.setDraggable(!window.matchMedia("(pointer: coarse)").matches);
+      // 마우스 휠은 페이지 스크롤에 쓰고, 터치 화면에서는 두 손가락으로 확대한다.
+      map.setZoomable(window.matchMedia("(pointer: coarse)").matches);
       zoomControl.current = new kakao.maps.ZoomControl();
       map.addControl(zoomControl.current, kakao.maps.ControlPosition.TOPRIGHT);
       const heat = imageOverlay(kakao, "heat");

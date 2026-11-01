@@ -23,7 +23,7 @@ type ViewMode = "window" | "orbit" | "top";
 
 const DATES = [
   { id: "2026-12-21", label: "동지" },
-  { id: "2026-03-20", label: "춘분" },
+  { id: "2026-03-20", label: "춘분/추분" },
   { id: "2026-06-21", label: "하지" },
 ];
 const TIMES = [
@@ -43,6 +43,9 @@ const LOOK_YAW = 40;
 const LOOK_PITCH = 18;
 // 사진 안에서 유리창이 있는 영역(가로 1672, 세로 468 기준)이다.
 const PHOTO = { width: 1672, height: 468, glass: { x: 488, y: 16, width: 714, height: 326 } };
+// 세로 화면에서 영상의 가로세로 비율과 위아래 요소 사이의 최소 간격이다.
+const DISPLAY_RATIO = 16 / 9;
+const DISPLAY_GAP = 16;
 
 const metersPerLat = 111000;
 const clamp = (v: number, min = 0, max = 1) => Math.min(max, Math.max(min, v));
@@ -685,6 +688,8 @@ export default function DayView({
   const around = useRef<Promise<Surroundings> | null>(null);
   const wantSound = useRef(false);
   const room = useRef<HTMLDivElement>(null);
+  const header = useRef<HTMLElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
   const look = useRef({ yaw: 0, pitch: 0 });
   const report = useMemo(() => (buildings ? sunReport(home, input, buildings, date) : null), [home, input, buildings, date]);
@@ -701,9 +706,32 @@ export default function DayView({
   const latest = useRef({ date, minute, conditions });
   latest.current = { date, minute, conditions };
 
+  // 세로 화면에서는 사진을 유리창 중심의 16:9로 잘라 머리글과 조작판 사이 가운데에 놓는다.
+  const fitRoom = () => {
+    const box = room.current;
+    if (!box) return null;
+    box.removeAttribute("style");
+    if (!window.matchMedia("(max-aspect-ratio: 1/1)").matches || !header.current || !panel.current) return null;
+    const { glass } = PHOTO;
+    const top = header.current.getBoundingClientRect().bottom + DISPLAY_GAP;
+    const bottom = panel.current.getBoundingClientRect().top - DISPLAY_GAP;
+    const width = Math.min(window.innerWidth, (bottom - top) * DISPLAY_RATIO);
+    const height = width / DISPLAY_RATIO;
+    const photoWidth = (height * PHOTO.width) / PHOTO.height;
+    const left = window.innerWidth / 2 - ((glass.x + glass.width / 2) / PHOTO.width) * photoWidth;
+    const cutLeft = (window.innerWidth - width) / 2 - left;
+    box.style.top = `${top + (bottom - top - height) / 2}px`;
+    box.style.left = `${left}px`;
+    box.style.width = `${photoWidth}px`;
+    box.style.transform = "none";
+    box.style.clipPath = `inset(0 ${photoWidth - cutLeft - width}px 0 ${cutLeft}px)`;
+    return bottom;
+  };
+
   // 창문 보기에서는 3D 화면을 사진 속 유리창 자리에만 맞춘다.
   const fitCanvas = () => {
     const target = canvas.current;
+    const bottom = fitRoom();
     const frame = room.current?.getBoundingClientRect();
     if (!target) return;
     const { glass } = PHOTO;
@@ -714,7 +742,7 @@ export default function DayView({
           width: (glass.width / PHOTO.width) * frame.width,
           height: (glass.height / PHOTO.height) * frame.height,
         }
-      : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+      : { left: 0, top: 0, width: window.innerWidth, height: bottom ?? window.innerHeight };
     target.style.left = `${box.left}px`;
     target.style.top = `${box.top}px`;
     target.style.width = `${box.width}px`;
@@ -848,7 +876,7 @@ export default function DayView({
         )}
       </div>
 
-      <header className="dv-top">
+      <header ref={header} className="dv-top">
         <p>{home.name ?? home.type}</p>
         <ModeSwitch
           label="보기"
@@ -859,7 +887,7 @@ export default function DayView({
         <button className="dv-close" onClick={onClose} aria-label="닫기">×</button>
       </header>
 
-      <aside className="dv-panel">
+      <aside ref={panel} className="dv-panel">
         <ModeSwitch label="날짜" options={DATES} value={date} onChange={setDate} />
         <div className="dv-home">
           <FloorInput input={input} maxFloor={maxFloor} onChange={onInput} />
