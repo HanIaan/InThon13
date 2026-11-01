@@ -71,6 +71,31 @@ export function ZoomButtons({ onZoom }: { onZoom: (step: number) => void }) {
   );
 }
 
+const CREDITS = [
+  ["지도", "Kakao 지도"],
+  ["장소·도로·주소", "© OpenStreetMap contributors (ODbL)"],
+  ["건물", "국토교통부 GIS건물통합정보 (CC BY)"],
+  ["소음·조도·혼잡", "서울 열린데이터광장 S-DoT, 생활인구 (공공누리 1유형)"],
+  ["야간 빛", "NASA Black Marble"],
+  ["소음원·빛원", "소상공인시장진흥공단 상가(상권)정보"],
+  ["지형", "국토지리정보원 공개 DEM"],
+  ["행정동 경계", "vuski/admdongkor"],
+  ["소리", "Freesound (CC0)"],
+];
+
+export function MapCredits() {
+  return (
+    <details className="credits glass">
+      <summary>데이터 출처</summary>
+      <dl>
+        {CREDITS.map(([label, source]) => (
+          <div key={label}><dt>{label}</dt><dd>{source}</dd></div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 export function LocateButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
   return (
     <button className="locate glass" onClick={onClick} disabled={busy} aria-label="내 위치 찾기" title="내 위치">

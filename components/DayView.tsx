@@ -963,7 +963,7 @@ export default function DayView({
           <div><dt>{input.floor}층 소음</dt><dd>{noise.db === null ? "데이터 없음" : `약 ${noise.db.toFixed(1)}dB`}</dd></div>
           <div><dt>혼잡</dt><dd>{level(cell.burdens[slot].crowd)}</dd></div>
         </dl>
-        <details className="dv-estimate"><summary>일조·소음 추정 기준</summary><p>햇빛은 시간·창 방향·층 높이와 주변 건물·지형을 반영합니다. 방 크기와 창 크기는 사진에 맞춘 예시입니다. 일조 시간은 선택한 날 08–16시 중 창 일부에 직사광이 드는 시간입니다.</p><p>{noise.roadM === null ? "가까운 도로 정보가 없어 층별 소음 보정은 적용하지 않았습니다." : `가까운 도로 약 ${Math.round(noise.roadM)}m 기준, 1층 대비 ${noise.deltaDb.toFixed(1)}dB 거리 보정. 도로 소음이 주된 소리라는 가정이며 건물 차폐·반사에 따라 실제 고층 소음은 커질 수도 있습니다.`} 창 밖 기준으로, 실내 방음과 창문 개폐는 반영하지 않습니다. 재생 음량은 실제 dB를 재현하지 않습니다.</p><p>건물 윤곽·높이와 지형은 지도 데이터를 사용합니다. 외벽, 옥상 설비, 간판과 수목은 동네 분위기를 표현한 예시이며 실제 외관·상호와 다를 수 있습니다.</p></details>
+        <details className="dv-estimate"><summary>일조·소음 추정 기준</summary><p>햇빛은 시간·창 방향·층 높이와 주변 건물·지형을 반영합니다. 방 크기와 창 크기는 사진에 맞춘 예시입니다. 일조 시간은 선택한 날 08–16시 중 창 일부에 직사광이 드는 시간입니다.</p><p>{noise.roadM === null ? "가까운 도로 정보가 없어 층별 소음 보정은 적용하지 않았습니다." : `가까운 도로 약 ${Math.round(noise.roadM)}m 기준, 1층 대비 ${noise.deltaDb.toFixed(1)}dB 거리 보정. 도로 소음이 주된 소리라는 가정이며 건물 차폐·반사에 따라 실제 고층 소음은 커질 수도 있습니다.`} 창 밖 기준으로, 실내 방음과 창문 개폐는 반영하지 않습니다. 재생 음량은 실제 dB를 재현하지 않습니다.</p><p>건물 윤곽·높이는 국토교통부 GIS건물통합정보(CC BY), 지형은 국토지리정보원 공개 DEM, 도로는 © OpenStreetMap contributors 자료를 사용합니다. 외벽, 옥상 설비, 간판과 수목은 동네 분위기를 표현한 예시이며 실제 외관·상호와 다를 수 있습니다.</p></details>
       </aside>
 
       <footer ref={bar} className="dv-bar">

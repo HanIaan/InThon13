@@ -159,6 +159,14 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .map-me { width: 16px; height: 16px; margin: -8px; background: #2f7cf6; border: 3px solid #fff; border-radius: 50%; box-sizing: border-box; box-shadow: 0 0 0 7px rgba(47, 124, 246, 0.22); pointer-events: none; }
 .locate { position: fixed; z-index: 30; top: 8px; right: 56px; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--ink); cursor: pointer; }
 .locate:disabled { opacity: 0.55; cursor: progress; }
+.credits { position: fixed; z-index: 30; bottom: 30px; left: 8px; max-width: 320px; padding: 4px 10px; border-radius: 10px; color: var(--ink); font-size: 11px; }
+.credits summary { cursor: pointer; list-style: none; opacity: 0.72; }
+.credits summary::-webkit-details-marker { display: none; }
+.credits[open] summary { margin-bottom: 6px; opacity: 1; font-weight: 600; }
+.credits dl { display: grid; gap: 3px; margin: 0 0 4px; }
+.credits dl div { display: grid; grid-template-columns: 82px 1fr; gap: 8px; }
+.credits dt { opacity: 0.6; }
+.credits dd { margin: 0; }
 /* 카카오 확대 버튼의 인라인 모서리를 앱의 카드 모양에 맞춘다. */
 .map div:has(> button[title="확대"]) { overflow: hidden; border-radius: 14px !important; box-shadow: 0 8px 28px rgba(16, 20, 24, 0.12) !important; }
 /* 지도 위 고정 핀이다. 끝이 가리키는 곳을 고르고, 지도를 끄는 동안에는 위로 뜬다. */
@@ -360,7 +368,7 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 
 /* 창 크기가 달라도 같은 화면으로 보이도록 UI 전체를 --ui 배율로 맞춘다. */
 :root { --ui: 1; }
-.switch, .tune, .dock, .spots, .notice, .peek, .sheet-grid, .dv-top, .dv-panel, .dv-bar { zoom: var(--ui); }
+.switch, .tune, .dock, .spots, .notice, .peek, .credits, .sheet-grid, .dv-top, .dv-panel, .dv-bar { zoom: var(--ui); }
 
 /* 첫 로드 위치가 끌려가지 않도록 앱이 시작된 뒤에 켠다. 마우스·트랙패드는 useGlideScroll이 맡는다. */
 @media (pointer: coarse) {
@@ -529,6 +537,7 @@ html.locked { overflow: hidden; }
   .map div:has(> button[title="확대"]) { transform: translateX(calc(3px - 12px * var(--ui))); }
   .locate { right: calc(12px * var(--ui) + 40px); }
   .rest-map ~ .tune { top: 186px; }
+  .credits { bottom: 226px; left: 12px; }
   .rest-map ~ .locate { top: calc(186px * var(--ui)); }
   .rest-map .map div:has(> button[title="확대"]) { transform: translate(calc(3px - 12px * var(--ui)), calc(183px * var(--ui))); }
   .spots ol { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x pan-y; cursor: grab; }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Dock, LocateButton, SensitivitySliders, TimeBar, TopSwitch, TuneCard, ZoomButtons } from "@/components/Controls";
+import { Dock, LocateButton, MapCredits, SensitivitySliders, TimeBar, TopSwitch, TuneCard, ZoomButtons } from "@/components/Controls";
 import { DirectionDial, FloorSelect, LightCard, ModeSwitch, NoiseCard, SunCard } from "@/components/HomeViews";
 import { RestHours, SpotsPanel } from "@/components/RestViews";
 import { GlassSheets, MainSheet } from "@/components/Sheets";
@@ -590,6 +590,7 @@ export default function Home() {
 
       <TopSwitch isHome={isHome} sheetUp={up} onChange={switchTab} />
       {!up && <LocateButton busy={locating} onClick={locate} />}
+      {!up && <MapCredits />}
       {(toast || notice) && <p className="notice glass" role="status">{toast || notice}</p>}
 
       <TuneCard open={tuneOpen} hidden={up} onToggle={() => setTuneOpen(!tuneOpen)}>
