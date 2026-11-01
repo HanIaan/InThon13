@@ -157,7 +157,7 @@ function normalize(buffer: AudioBuffer) {
   }
 }
 
-export type SoundState ={ minute: number; date: string; db: number; floor: number };
+export type SoundState ={ minute: number; date: string; db: number; referenceDb?: number; floor: number };
 
 export function startSoundscape(env: Surroundings) {
   const context = new AudioContext();
@@ -264,7 +264,9 @@ export function startSoundscape(env: Surroundings) {
       for (const name of LOOPS) loopGains.get(name)!.gain.setTargetAtTime(loops[name], now, 0.6);
       height.frequency.setTargetAtTime(9000 / (1 + (next.floor - 1) / 6), now, 0.3);
       // 전체 크기는 그 시간대 소음 dB를 따른다(30dB 거의 무음, 75dB 최대).
-      master.gain.setTargetAtTime(0.15 + 0.85 * clamp((next.db - 30) / 45) ** 1.3, now, 0.4);
+      const referenceDb = next.referenceDb ?? next.db;
+      const relativeGain = 10 ** ((next.db - referenceDb) / 20);
+      master.gain.setTargetAtTime(Math.min(1, (0.15 + 0.85 * clamp((referenceDb - 30) / 45) ** 1.3) * relativeGain), now, 0.4);
     },
     stop() {
       stopped = true;

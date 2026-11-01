@@ -58,6 +58,9 @@ import {
 } from "@/lib/rest";
 import { KAKAO_KEY, kakaoAddress, type SearchPlace } from "@/lib/kakao";
 import { terrainSummary } from "@/lib/terrain";
+import { groundAt } from "@/lib/terrain";
+import { floorNoiseScore, prepareFloorNoise } from "@/lib/floor-noise";
+import calibration from "@/backend/app/core/calibration_seoul.json";
 import { buildingAt, CELL_SIZE, DETAIL_ZOOM, HOME_ZOOM, loadBuildings, loadStreets, OVERVIEW_SIZE, SEOUL, useSeoul, type MapView, type Street } from "@/lib/seoul";
 import { useGlideScroll } from "@/lib/use-glide-scroll";
 
@@ -142,6 +145,7 @@ export default function Home() {
     [cells, overview, point],
   );
   const homeCell = useMemo(() => cellForHome(home, cells), [home, cells]);
+  const estimateNoise = useMemo(() => prepareFloorNoise(home, streets, groundAt), [home, streets]);
 
   const scores = useMemo(() => {
     const map = new Map<string, number>();
@@ -474,12 +478,18 @@ export default function Home() {
   };
   const sleep = details?.night?.comfort_score ?? (API_BASE ? null : homeResult.sleep);
   const sunPoint = report ? daylightScore(report.winter.minutes) : null;
-  const noiseDayPoint = API_BASE ? serverScore("day", "noise") : Math.round(100 - homeCell.burdens.day.sound);
-  const noiseNightPoint = API_BASE ? serverScore("night", "noise") : Math.round(100 - homeCell.burdens.night.sound);
+  const noiseBySlot = Object.fromEntries(SLOTS.map(({ id }) => [id, API_BASE ? details?.[id]?.indicators?.noise?.raw_value ?? null : homeCell.noiseDb[id]])) as Record<Slot, number | null>;
+  const homeNoise = (slotId: Slot) => estimateNoise(noiseBySlot[slotId], homeInput.floor);
+  const homeNoiseScore = (slotId: Slot) => floorNoiseScore(
+    API_BASE ? serverScore(slotId, "noise") : Math.round(100 - homeCell.burdens[slotId].sound),
+    noiseBySlot[slotId], homeNoise(slotId).db,
+    API_BASE ? { percentiles: calibration.percentiles, values: calibration.breakpoints.noise.slots[slotId].values } : undefined,
+  );
+  const noiseDayPoint = homeNoiseScore("day");
+  const noiseNightPoint = homeNoiseScore("night");
   const lightPoint = API_BASE ? serverScore("night", "light") : Math.round(100 - homeResult.light);
   const serverDb = (slotId: Slot) => {
-    const value = details?.[slotId]?.indicators?.noise?.raw_value;
-    return value == null ? null : Math.round(value);
+    return homeNoise(slotId).db;
   };
   const crowdLevel = (slotId: Slot) => {
     const value = serverScore(slotId, "crowd");
@@ -670,7 +680,8 @@ export default function Home() {
                   </div>
                   <NoiseCard
                     isDay={showDay}
-                    noise={API_BASE ? serverDb(showDay ? "day" : "night") : target.cell.noiseDb[showDay ? "day" : "night"]}
+                    noise={serverDb(showDay ? "day" : "night")}
+                    estimateNote={`${homeInput.floor}층 · ${homeNoise(showDay ? "day" : "night").roadM === null ? "층 보정 미적용" : "도로 거리 기반 추정"} · 창 밖 기준`}
                     crowd={API_BASE ? crowdLevel(showDay ? "day" : "night") : level(target.cell.burdens[showDay ? "day" : "night"].crowd)}
                     score={showDay ? noiseDayPoint : noiseNightPoint}
                     sensor={nearestSensor(home.lat, home.lng)}
@@ -704,6 +715,7 @@ export default function Home() {
           maxFloor={Number(home.levels) || 30}
           buildings={buildings}
           streets={streets}
+          noiseBySlot={noiseBySlot}
           onInput={setHomeInput}
           onClose={() => setDayOpen(false)}
         />

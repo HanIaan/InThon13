@@ -3,12 +3,13 @@ import seedRoads from "./roads.json";
 import seedSensors from "./sensors.json";
 import { SENSITIVITY_MAX, type Sensitivity } from "./rest";
 import { groundAt } from "./terrain";
+import { prepareWindow, type WindowField } from "./room-light";
 
 // 기획서 6-2~6-4장의 주거 계산이다. 층·창문 보정값은 기획서의 초기 추정치를 따른다.
 export type Direction = "north" | "east" | "south" | "west";
 export type HomeInput = { floor: number; direction: Direction };
 export type Building = { levels: number | null; height?: number; ring: [number, number][]; ground?: number };
-export type Sunlight = { minutes: number; start: string; end: string; slots: boolean[] };
+export type Sunlight = { minutes: number; start: string; end: string; slots: boolean[]; exposure: number[] };
 export type SunReport = { winter: Sunlight; missingLevels: number };
 
 export const DIRECTIONS: { id: Direction; label: string; degree: number }[] = [
@@ -18,13 +19,8 @@ export const DIRECTIONS: { id: Direction; label: string; degree: number }[] = [
   { id: "north", label: "북향", degree: 0 },
 ];
 
-const FLOOR_METERS = 3;
-const UNKNOWN_LEVELS = 3;
 // 동지 아침·저녁 해가 낮을 때 30층 건물 그림자가 400m 넘게 뻗으므로 600m까지 본다.
 const SHADE_RANGE_M = 600;
-const HILL_START_M = 120;
-const HILL_RANGE_M = 3000;
-const HILL_STEP_M = 60;
 const STEP_MINUTES = 10;
 const STREET_LIGHT_SHARE = 0.45;
 const WINTER_SOLSTICE = "2026-12-21";
@@ -121,87 +117,44 @@ export function homeVerdict(score: number) {
   return "추천하지 않아요";
 }
 
-function rayDistance(ring: { x: number; y: number }[], dx: number, dy: number) {
-  let nearest = Infinity;
-  for (let i = 0; i < ring.length - 1; i++) {
-    const a = ring[i];
-    const b = ring[i + 1];
-    const ex = b.x - a.x;
-    const ey = b.y - a.y;
-    const cross = dx * ey - dy * ex;
-    if (Math.abs(cross) < 1e-9) continue;
-    const t = (a.x * ey - a.y * ex) / cross;
-    const u = (a.x * dy - a.y * dx) / cross;
-    if (t > 0.5 && u >= 0 && u <= 1) nearest = Math.min(nearest, t);
-  }
-  return nearest;
-}
-
-function containsOrigin(ring: { x: number; y: number }[]) {
-  let hit = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [a, b] = [ring[i], ring[j]];
-    if (a.y > 0 !== b.y > 0 && 0 < ((b.x - a.x) * -a.y) / (b.y - a.y) + a.x) hit = !hit;
-  }
-  return hit;
-}
-
 function timeLabel(minutes: number) {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
-// 주변 건물 밖의 언덕과 산은 태양 방향으로 지형을 따라가며 확인한다.
-function hillBlocks(window: { lat: number; lng: number }, eye: number, dx: number, dy: number, rise: number) {
-  const metersPerLng = 111000 * Math.cos((window.lat * Math.PI) / 180);
-  for (let distance = HILL_START_M; distance <= HILL_RANGE_M; distance += HILL_STEP_M) {
-    if (groundAt(window.lat + (dy * distance) / 111000, window.lng + (dx * distance) / metersPerLng) > eye + distance * rise) return true;
-  }
-  return false;
-}
+const windows = new WeakMap<object, WeakMap<Building[], WindowField>>();
+const reports = new WeakMap<WindowField, Map<string, SunReport>>();
 
-function sunlightOn(date: string, window: { lat: number; lng: number; height: number; base: number }, direction: Direction, around: { height: number; ring: { x: number; y: number }[] }[]): Sunlight {
-  const facing = degreeOf(direction);
-  const slots: boolean[] = [];
-  for (let minutes = 0; minutes < 1440; minutes += STEP_MINUTES) {
-    const at = new Date(`${date}T${timeLabel(minutes)}:00+09:00`);
-    const sun = getPosition(at, window.lat, window.lng);
-    // suncalc 2는 고도와 방위를 도 단위로, 방위는 북쪽 기준 시계 방향으로 돌려준다.
-    const sunBearing = (sun.azimuth + 360) % 360;
-    const offAxis = Math.abs(((sunBearing - facing + 540) % 360) - 180);
-    let lit = sun.altitude > 0 && offAxis < 90;
-    if (lit) {
-      const dx = Math.sin((sunBearing * Math.PI) / 180);
-      const dy = Math.cos((sunBearing * Math.PI) / 180);
-      const rise = Math.tan((sun.altitude * Math.PI) / 180);
-      lit = !around.some((b) => {
-        const distance = rayDistance(b.ring, dx, dy);
-        return distance <= SHADE_RANGE_M && b.height > window.height + distance * rise;
-      }) && !hillBlocks(window, window.base + window.height, dx, dy, rise);
-    }
-    slots.push(lit);
-  }
-  const litMinutes = slots.flatMap((lit, i) => (lit && i * STEP_MINUTES >= COUNT_FROM && i * STEP_MINUTES < COUNT_TO ? [i * STEP_MINUTES] : []));
-  return {
-    minutes: litMinutes.length * STEP_MINUTES,
-    start: litMinutes.length ? timeLabel(litMinutes[0]) : "",
-    end: litMinutes.length ? timeLabel(litMinutes[litMinutes.length - 1] + STEP_MINUTES) : "",
-    slots,
-  };
+export function windowFor(home: { lat: number; lng: number; ring: [number, number][] }, buildings: Building[]) {
+  let byBuildings = windows.get(home);
+  if (!byBuildings) { byBuildings = new WeakMap(); windows.set(home, byBuildings); }
+  let field = byBuildings.get(buildings);
+  if (!field) { field = prepareWindow(home, buildings, groundAt); byBuildings.set(buildings, field); }
+  return field;
 }
 
 // 기획서 6-3: 창문에서 태양 쪽으로 선을 그어 주변 건물에 가리는지 10분 단위로 확인한다.
 export function sunReport(home: { lat: number; lng: number; ring: [number, number][] }, input: HomeInput, buildings: Building[], date: string = WINTER_SOLSTICE): SunReport {
-  const base = groundAt(home.lat, home.lng);
-  const around = buildings
-    .map((b) => ({ levels: b.levels, height: b.height, ground: b.ground ?? base, ring: b.ring.map(([lat, lng]) => toMeters(home, lat, lng)) }))
-    .filter((b) => b.ring.some((p) => Math.hypot(p.x, p.y) < SHADE_RANGE_M + 40))
-    .filter((b) => !containsOrigin(b.ring))
-    .map((b) => ({ height: (b.height ?? (b.levels ?? UNKNOWN_LEVELS) * FLOOR_METERS) + b.ground - base, ring: b.ring, missing: b.levels === null }));
-  const window = { lat: home.lat, lng: home.lng, height: (input.floor - 1) * FLOOR_METERS + 1.5, base };
-  return {
-    winter: sunlightOn(date, window, input.direction, around),
-    missingLevels: around.length ? Math.round((around.filter((b) => b.missing).length / around.length) * 100) : 0,
+  const window = windowFor(home, buildings);
+  let cache = reports.get(window);
+  if (!cache) { cache = new Map(); reports.set(window, cache); }
+  const key = `${date}/${input.floor}/${input.direction}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const exposure: number[] = [];
+  for (let minute = 0; minute < 1440; minute += STEP_MINUTES) {
+    const sun = getPosition(new Date(`${date}T${timeLabel(minute)}:00+09:00`), home.lat, home.lng);
+    exposure.push(window.sample(input, sun.altitude, sun.azimuth).visibility);
+  }
+  const slots = exposure.map((value) => value > 0);
+  const litMinutes = slots.flatMap((lit, i) => lit && i * STEP_MINUTES >= COUNT_FROM && i * STEP_MINUTES < COUNT_TO ? [i * STEP_MINUTES] : []);
+  const nearby = buildings.filter((b) => b.ring.some(([lat, lng]) => Math.hypot((lat - home.lat) * 111000, (lng - home.lng) * metersPerLng(home.lat)) < SHADE_RANGE_M));
+  const report = {
+    winter: { minutes: litMinutes.length * STEP_MINUTES, start: litMinutes.length ? timeLabel(litMinutes[0]) : "", end: litMinutes.length ? timeLabel(litMinutes.at(-1)! + STEP_MINUTES) : "", slots, exposure },
+    missingLevels: nearby.length ? Math.round(nearby.filter((b) => b.levels === null).length / nearby.length * 100) : 0,
   };
+  if (cache.size >= 64) cache.delete(cache.keys().next().value!);
+  cache.set(key, report);
+  return report;
 }
 
 const hourOf = (date: Date) => (date.getUTCHours() + 9 + date.getUTCMinutes() / 60) % 24;

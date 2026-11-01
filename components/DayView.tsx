@@ -6,16 +6,14 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { DirectionDial, FloorInput, ModeSwitch } from "@/components/HomeViews";
+import RoomSunlight from "@/components/RoomSunlight";
+import { FACADE_STYLES, facade, facadeCache, surfaceMaterial, storefrontMaterial, STOREFRONT_ROWS, foliageMaterial } from "@/lib/city-materials";
 import type { Cell, Home } from "@/lib/data";
-import { DIRECTIONS, formatDuration, sunReport, type Building, type HomeInput } from "@/lib/home-report";
+import { DIRECTIONS, formatDuration, sunReport, windowFor, type Building, type HomeInput } from "@/lib/home-report";
 import type { Street } from "@/lib/seoul";
-import { level, slotOf } from "@/lib/rest";
+import { level, slotOf, type Slot } from "@/lib/rest";
+import { prepareFloorNoise } from "@/lib/floor-noise";
 import { startSoundscape, surroundings, type Surroundings } from "@/lib/soundscape";
 import { coverAt, groundAt, terrainSummary, type Cover } from "@/lib/terrain";
 
@@ -52,9 +50,8 @@ const clamp = (v: number, min = 0, max = 1) => Math.min(max, Math.max(min, v));
 const ramp = (v: number, from: number, to: number) => clamp((v - from) / (to - from));
 
 function sunAt(date: string, minute: number, lat: number, lng: number) {
-  const hour = String(Math.floor(minute / 60)).padStart(2, "0");
-  const min = String(minute % 60).padStart(2, "0");
-  const { altitude, azimuth } = getPosition(new Date(`${date}T${hour}:${min}:00+09:00`), lat, lng);
+  const instant = new Date(new Date(`${date}T00:00:00+09:00`).getTime() + minute * 60000);
+  const { altitude, azimuth } = getPosition(instant, lat, lng);
   return { altitude, azimuth };
 }
 
@@ -65,189 +62,37 @@ function seeded(seed: number) {
   };
 }
 
-// 외벽 한 칸은 폭 4m, 높이 1개 층(3m)이다. 고층은 아파트 발코니, 중층은 타일 띠창, 저층은 벽돌 빌라로 그린다.
-// 같은 그림의 높낮이(창은 들어가고 층 슬래브는 나온다)로 노멀맵을 만들어 빛을 받을 때 요철이 보이게 한다.
-type FacadeStyle = { wall: string; trim: string; kind: "balcony" | "band" | "punched" };
-const FACADE_STYLES: Record<"high" | "mid" | "low", FacadeStyle[]> = {
-  high: [
-    { wall: "#ece8df", trim: "#d7d1c5", kind: "balcony" },
-    { wall: "#e3dfd6", trim: "#c9c2b4", kind: "balcony" },
-    { wall: "#f1ede6", trim: "#b9c2c9", kind: "balcony" },
-  ],
-  mid: [
-    { wall: "#d8cfc1", trim: "#bdb2a1", kind: "band" },
-    { wall: "#c9c5bd", trim: "#a9a49b", kind: "band" },
-  ],
-  low: [
-    { wall: "#a8705a", trim: "#8a5a47", kind: "punched" },
-    { wall: "#c4a988", trim: "#a68c6d", kind: "punched" },
-    { wall: "#b9b2a6", trim: "#968f84", kind: "punched" },
-  ],
-};
-const FACADE = { cols: 6, rows: 6, cellW: 128, cellH: 96 };
-
-function normalFromHeight(height: HTMLCanvasElement, strength: number) {
-  const { width, height: rows } = height;
-  const source = height.getContext("2d")!.getImageData(0, 0, width, rows).data;
-  const out = document.createElement("canvas");
-  out.width = width;
-  out.height = rows;
-  const context = out.getContext("2d")!;
-  const image = context.createImageData(width, rows);
-  const at = (x: number, y: number) => source[(((y + rows) % rows) * width + ((x + width) % width)) * 4] / 255;
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < width; x++) {
-      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
-      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
-      const length = Math.hypot(dx, dy, 1);
-      const i = (y * width + x) * 4;
-      image.data[i] = ((-dx / length) * 0.5 + 0.5) * 255;
-      image.data[i + 1] = ((dy / length) * 0.5 + 0.5) * 255;
-      image.data[i + 2] = ((1 / length) * 0.5 + 0.5) * 255;
-      image.data[i + 3] = 255;
-    }
-  }
-  context.putImageData(image, 0, 0);
-  return out;
-}
-
-// 텍스처 그리기와 노멀맵 계산이 무거워서, 한 번 만든 외벽은 다시 열 때 그대로 쓴다.
-const facadeCache = new Map<string, THREE.MeshStandardMaterial>();
-
-// 밤에는 일부 창에만 불이 켜진다.
-function facade(style: FacadeStyle, seed: number, litShare: number) {
-  const key = `${style.wall}/${style.kind}/${seed}/${litShare}`;
-  const cached = facadeCache.get(key);
-  if (cached) return cached;
-  const { cols, rows, cellW, cellH } = FACADE;
-  const [map, glow, bump] = [0, 1, 2].map(() => {
-    const canvas = document.createElement("canvas");
-    canvas.width = cols * cellW;
-    canvas.height = rows * cellH;
-    return canvas;
-  });
-  const paint = map.getContext("2d")!;
-  const light = glow.getContext("2d")!;
-  const relief = bump.getContext("2d")!;
-  paint.fillStyle = style.wall;
-  paint.fillRect(0, 0, map.width, map.height);
-  light.fillStyle = "#000";
-  light.fillRect(0, 0, glow.width, glow.height);
-  relief.fillStyle = "#808080";
-  relief.fillRect(0, 0, bump.width, bump.height);
-  const random = seeded(seed);
-  // 오래된 외벽처럼 아주 옅은 얼룩만 남긴다. 멀리서 지저분해 보이지 않게 크고 흐리게 칠한다.
-  for (let n = 0; n < 60; n++) {
-    paint.fillStyle = `rgba(0,0,0,${random() * 0.025})`;
-    paint.fillRect(random() * map.width, random() * map.height, 30 + random() * 80, 20 + random() * 120);
-  }
-  const glass = (x: number, y: number, w: number, h: number) => {
-    const pane = paint.createLinearGradient(x, y, x, y + h);
-    pane.addColorStop(0, "#c9d8e3");
-    pane.addColorStop(0.45, "#8ea4b4");
-    pane.addColorStop(1, "#56697a");
-    paint.fillStyle = pane;
-    paint.fillRect(x, y, w, h);
-    relief.fillStyle = "#3a3a3a";
-    relief.fillRect(x, y, w, h);
-    if (random() < litShare) {
-      light.fillStyle = random() < 0.75 ? "#ffcf96" : "#dfeaff";
-      light.fillRect(x, y, w, h);
-    }
-  };
-  for (let col = 0; col < cols; col++) {
-    for (let row = 0; row < rows; row++) {
-      const [x0, y0] = [col * cellW, row * cellH];
-      if (style.kind === "balcony") {
-        // 발코니 통창, 그 아래 난간 띠, 바닥 슬래브 띠.
-        glass(x0 + 10, y0 + 14, cellW - 20, cellH - 44);
-        paint.fillStyle = "rgba(255,255,255,.55)";
-        for (let m = 1; m < 3; m++) paint.fillRect(x0 + 10 + ((cellW - 20) * m) / 3 - 1, y0 + 14, 2, cellH - 44);
-        paint.fillStyle = style.trim;
-        paint.fillRect(x0, y0 + cellH - 30, cellW, 18);
-        paint.fillStyle = "rgba(0,0,0,.18)";
-        paint.fillRect(x0, y0 + cellH - 12, cellW, 3);
-        relief.fillStyle = "#c8c8c8";
-        relief.fillRect(x0, y0 + cellH - 30, cellW, 21);
-        if (col % 3 === 0) {
-          paint.fillStyle = style.trim;
-          paint.fillRect(x0, y0, 6, cellH);
-          relief.fillStyle = "#b0b0b0";
-          relief.fillRect(x0, y0, 6, cellH);
-        }
-      } else if (style.kind === "band") {
-        // 층마다 이어지는 띠창과 타일 띠.
-        glass(x0, y0 + 22, cellW, cellH - 50);
-        paint.fillStyle = "rgba(255,255,255,.5)";
-        paint.fillRect(x0 + cellW / 2 - 1, y0 + 22, 2, cellH - 50);
-        paint.fillStyle = style.trim;
-        paint.fillRect(x0, y0 + cellH - 28, cellW, 28);
-        relief.fillStyle = "#a0a0a0";
-        relief.fillRect(x0, y0 + cellH - 28, cellW, 28);
-      } else {
-        // 벽돌 줄눈 위에 작은 창 두 개.
-        paint.fillStyle = "rgba(0,0,0,.08)";
-        for (let b = 0; b < cellH; b += 8) paint.fillRect(x0, y0 + b, cellW, 1);
-        for (const wx of [x0 + 18, x0 + 74]) {
-          if (random() < 0.15) continue;
-          glass(wx, y0 + 26, 36, 40);
-          paint.fillStyle = style.trim;
-          paint.fillRect(wx - 3, y0 + 66, 42, 5);
-        }
-      }
-    }
-  }
-  const normal = normalFromHeight(bump, 6);
-  const textures = [map, glow, normal].map((canvas, i) => {
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(1 / (4 * cols), 1 / (FLOOR_M * rows));
-    if (i < 2) texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 8;
-    return texture;
-  });
-  const material = new THREE.MeshStandardMaterial({
-    map: textures[0],
-    emissiveMap: textures[1],
-    emissive: 0xffffff,
-    emissiveIntensity: 0,
-    normalMap: textures[2],
-    normalScale: new THREE.Vector2(0.9, 0.9),
-    roughness: 0.82,
-  });
-  facadeCache.set(key, material);
-  return material;
-}
-
 type Conditions = { light: number; sound: number; crowd: number };
+type WindowViewport = { fullWidth: number; fullHeight: number; x: number; y: number; width: number; height: number };
 type Scene = {
   render: (date: string, minute: number, conditions: Conditions) => void;
   setMode: (mode: ViewMode) => void;
   setEye: (input: HomeInput) => void;
+  setPlayback: (playing: boolean) => void;
   look: (yaw: number, pitch: number) => void;
   resize: () => void;
+  setWindowViewport: (view: WindowViewport | null) => void;
   dispose: () => void;
 };
 
 const GROUND_M = 9000;
-const GROUND_CELLS = 300;
-const COVER_COLORS = { none: 0xaea99e, park: 0x8aa865, forest: 0x5f7f4c, water: 0x6b9cc4 };
+const GROUND_CELLS = 192;
+const COVER_COLORS = { none: 0xb8b3a6, park: 0x8c9873, forest: 0x687c59, water: 0x789b9c };
 const STREET_RANGE_M = 800;
-const ROAD_STEP_M = 12;
+const ROAD_STEP_M = 6;
 const ROAD_LIFT_M = 0.35;
 const WIDE_ROAD_M = 9;
-const ROAD_COLOR = 0x4f5256;
-const LANE_COLOR = 0x6d6f72;
+const ROAD_COLOR = 0x656967;
+const LANE_COLOR = 0x81817a;
 const TREE_STEP_M = 9;
 const TREE_HEIGHT_M = 9;
 const MAX_TREES = 6000;
 const TREE_CHANCE: Partial<Record<Cover, number>> = { forest: 0.8, park: 0.2 };
-const TREE_COLORS = [0x5f8c45, 0x6f9b4e, 0x7fa958, 0x588540];
+const TREE_COLORS = [0x5c7451, 0x758258, 0x879265, 0x526b4f];
 const MAX_CARS = 220;
 const MAX_PEOPLE = 420;
 const MAX_SIGNS = 240;
 const MAX_LAMPS = 320;
-const SIGN_COLORS = [0xff4d6d, 0x4dd2ff, 0xffe066, 0x7cff8a, 0xff8a3d, 0xffffff];
 const CAR_COLORS = [0xe8e8e8, 0x2a2d31, 0x8d9299, 0x7a1f24, 0x1f3a5f];
 
 function insideRing(x: number, z: number, ring: number[][]) {
@@ -287,18 +132,21 @@ function rooftop(points: number[][], cx: number, cz: number, roofAt: number, flo
 }
 
 function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[], streets: Street[]): Scene {
+  const buildStarted = performance.now();
+  canvas.dataset.sceneBuilds = String(Number(canvas.dataset.sceneBuilds ?? 0) + 1);
   const metersPerLng = 111000 * Math.cos((home.lat * Math.PI) / 180);
   const toLocal = (lat: number, lng: number) => [(lng - home.lng) * metersPerLng, -(lat - home.lat) * metersPerLat];
   const ownRing = home.ring.map(([lat, lng]) => toLocal(lat, lng));
   const homeGround = groundAt(home.lat, home.lng);
   const heightAt = (x: number, z: number) => groundAt(home.lat - z / metersPerLat, home.lng + x / metersPerLng) - homeGround;
-  const lowestAt = (points: number[][]) => Math.min(0, ...points.map(([x, z]) => heightAt(x, z)));
+  const lowestAt = (points: number[][]) => points.length ? Math.min(...points.map(([x, z]) => heightAt(x, z))) : 0;
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0xd3dde4, 0.00026);
@@ -324,7 +172,7 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const ambient = new THREE.HemisphereLight(0xdbe8f6, 0x9a8b76, 0.8);
   const sun = new THREE.DirectionalLight(0xfff0dc, 3);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -500, right: 500, top: 500, bottom: -500, near: 1, far: 2200 });
   sun.shadow.bias = -0.0003;
   sun.shadow.normalBias = 0.6;
@@ -335,28 +183,53 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   terrain.rotateX(-Math.PI / 2);
   const surface = terrain.getAttribute("position");
   const tint = new Float32Array(surface.count * 3);
+  const coverTints = Object.fromEntries(Object.entries(COVER_COLORS).map(([key,value])=>[key,new THREE.Color(value)])) as Record<Cover,THREE.Color>;
   for (let i = 0; i < surface.count; i++) {
-    const [x, z] = [surface.getX(i), surface.getZ(i)];
-    surface.setY(i, heightAt(x, z));
-    new THREE.Color(COVER_COLORS[coverAt(home.lat - z / metersPerLat, home.lng + x / metersPerLng)]).toArray(tint, i * 3);
+    // Concentrate the existing vertex budget near the home (5–15m spacing).
+    // Far hills stay coarse; source DEM heights are never procedurally invented.
+    const warp = (v: number) => { const u = v / (GROUND_M / 2); return (u * 0.1 + u ** 3 * 0.9) * GROUND_M / 2; };
+    const [x, z] = [warp(surface.getX(i)), warp(surface.getZ(i))];
+    surface.setXYZ(i, x, heightAt(x, z), z);
+    terrain.getAttribute("uv").setXY(i, x, z);
+    const color = new THREE.Color(0,0,0);
+    // Blend the coarse land-cover mask so distant hills have no checkerboard edge.
+    for(const dx of [-35,0,35])for(const dz of [-35,0,35]) {
+      color.add(coverTints[coverAt(home.lat-(z+dz)/metersPerLat,home.lng+(x+dx)/metersPerLng)]);
+    }
+    color.multiplyScalar((0.97 + 0.03 * Math.sin(x * 0.019) * Math.cos(z * 0.023))/9);
+    color.toArray(tint, i * 3);
   }
   terrain.setAttribute("color", new THREE.BufferAttribute(tint, 3));
   terrain.computeVertexNormals();
-  const ground = new THREE.Mesh(terrain, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96 }));
+  const ground = new THREE.Mesh(terrain, surfaceMaterial("ground"));
   ground.receiveShadow = true;
   scene.add(ground);
 
   const tiers = (["high", "mid", "low"] as const).map((tier, t) => FACADE_STYLES[tier].map((style, s) => facade(style, 11 + t * 17 + s * 7, 0.4)));
   const materials = tiers.flat();
   // 지붕은 바닥(따뜻한 회색)과 구분되게 조금 차가운 콘크리트색으로 칠한다.
-  const roof = new THREE.MeshStandardMaterial({ color: 0x9a9ea3, roughness: 0.88 });
+  const roof = surfaceMaterial("roof");
+  const roofColors = [0x71988b, 0x8caaa0, 0xa5a99f, 0xb3afa2, 0x8f9691];
+  const rooftopDetails: THREE.BufferGeometry[] = [];
+  const frontages: { x: number; z: number; y: number; angle: number; width: number }[] = [];
   const groups: THREE.BufferGeometry[][] = materials.map(() => []);
   const roofs: THREE.BufferGeometry[] = [];
   const random = seeded(101);
+  const treeExclusions=new Map<string,number[][][]>();
+  const occupy=(points:number[][])=>{
+    const xs=points.map(p=>p[0]),zs=points.map(p=>p[1]);
+    for(let x=Math.floor(Math.min(...xs)/24);x<=Math.floor(Math.max(...xs)/24);x++) {
+      for(let z=Math.floor(Math.min(...zs)/24);z<=Math.floor(Math.max(...zs)/24);z++) {
+        const key=`${x}/${z}`,list=treeExclusions.get(key)??[];list.push(points);treeExclusions.set(key,list);
+      }
+    }
+  };
+  if(ownRing.length)occupy(ownRing);
   for (const building of buildings) {
     const points = building.ring.map(([lat, lng]) => toLocal(lat, lng));
     const [cx, cz] = [points.reduce((sum, p) => sum + p[0], 0) / points.length, points.reduce((sum, p) => sum + p[1], 0) / points.length];
     if (Math.hypot(cx, cz) > RANGE_M || insideRing(0, 0, points)) continue;
+    occupy(points);
     const shape = new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, -z)));
     // 경사지에서도 뜨지 않게 가장 낮은 땅에서 세우고, 지붕은 건물 중심 땅 높이에 맞춘다.
     const base = lowestAt(points);
@@ -367,7 +240,37 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
     const tier = floors >= 7 ? 0 : floors >= 4 ? 1 : 2;
     const style = tiers.slice(0, tier).reduce((sum, list) => sum + list.length, 0) + Math.floor(random() * tiers[tier].length);
     // 옥상 난간(1m)과 고층 옥상의 계단실을 올려 지붕선이 납작하지 않게 한다.
-    roofs.push(...rooftop(points, cx, cz, roofAt, floors));
+    const roofColor = new THREE.Color(roofColors[Math.floor(random() * roofColors.length)]);
+    const colorizeRoof = (part: THREE.BufferGeometry) => {
+      const count = part.getAttribute("position").count;
+      const colors = new Float32Array(count * 3);
+      for (let v = 0; v < count; v++) roofColor.toArray(colors, v * 3);
+      part.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      const pos = part.getAttribute("position"), uv = part.getAttribute("uv");
+      for (let v = 0; v < count; v++) uv.setXY(v, pos.getX(v), pos.getZ(v));
+      return part;
+    };
+    roofs.push(...rooftop(points, cx, cz, roofAt, floors).map(colorizeRoof));
+    // Decorative rooftop fixtures use the real footprint, only near the viewer.
+    if (Math.hypot(cx, cz) < 230 && insideRing(cx, cz, points) && rooftopDetails.length < 300) {
+      const box = (x: number, y: number, z: number, w: number, h: number, d: number) => {
+        const corners = [[x-w/2,z-d/2],[x+w/2,z-d/2],[x+w/2,z+d/2],[x-w/2,z+d/2]];
+        if (!corners.every(([px,pz]) => insideRing(px,pz,points))) return;
+        const g = new THREE.BoxGeometry(w,h,d).toNonIndexed(); g.translate(x,y+h/2,z); rooftopDetails.push(g);
+      };
+      if (floors < 7) box(cx,roofAt,cz,2.8,2.2,2.4);
+      box(cx+3.2,roofAt,cz,1.2,0.75,1.8);
+      box(cx-2.5,roofAt,cz+1,0.8,1.6,0.8);
+    }
+    if (floors < 7 && Math.hypot(cx,cz) < 260) {
+      // Keep candidate signs on a facade; match them to a nearby road below.
+      for (let e=1;e<points.length;e++) {
+        const [a,b]=[points[e-1],points[e]], length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+        if (length < 5) continue;
+        const x=(a[0]+b[0])/2,z=(a[1]+b[1])/2;
+        frontages.push({x,z,y:roofAt-tall+3.1,angle:Math.atan2(b[0]-a[0],b[1]-a[1])+Math.PI/2,width:Math.min(5.5,length-1)});
+      }
+    }
     const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.max(1, roofAt - base), bevelEnabled: false });
     geometry.rotateX(-Math.PI / 2);
     geometry.translate(0, base, 0);
@@ -387,15 +290,16 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
       }
       return part;
     };
-    roofs.push(pick(geometry.groups[0]));
+    roofs.push(colorizeRoof(pick(geometry.groups[0])));
     groups[style].push(pick(geometry.groups[1]));
     geometry.dispose();
   }
   // 모형처럼 윤곽이 또렷하게 보이도록 벽 모서리에 옅은 선을 긋는다.
-  const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x3b3f44, transparent: true, opacity: 0.22 });
+  const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x3b3f44, transparent: true, opacity: 0.07 });
   const addMerged = (list: THREE.BufferGeometry[], material: THREE.Material, edges = false) => {
     if (!list.length) return;
     const merged = mergeGeometries(list);
+    for (const geometry of list) geometry.dispose();
     const mesh = new THREE.Mesh(merged, material);
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
@@ -403,13 +307,14 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   };
   groups.forEach((list, i) => addMerged(list, materials[i], true));
   addMerged(roofs, roof);
+  addMerged(rooftopDetails, new THREE.MeshStandardMaterial({color:0xc4c4b8,roughness:0.86}));
 
   // 내 건물은 둘러보기에서만 주황색으로 보여 준다. 창문 시점에서는 내 벽이 시야를 막지 않게 숨긴다.
   const ownBase = lowestAt(ownRing);
   const ownMesh = new THREE.Mesh(
     // 윤곽이 없는 위치는 건물을 지어내지 않는다.
     ownRing.length ? new THREE.ExtrudeGeometry(new THREE.Shape(ownRing.map(([x, z]) => new THREE.Vector2(x, -z))), { depth: (Number(home.levels) || UNKNOWN_FLOORS) * FLOOR_M - ownBase, bevelEnabled: false }) : new THREE.BufferGeometry(),
-    new THREE.MeshStandardMaterial({ color: 0xf2a44a, emissive: 0xf2a44a, emissiveIntensity: 0.12, roughness: 0.55 }),
+    new THREE.MeshStandardMaterial({ color: 0xd9b791, emissive: 0xb08050, emissiveIntensity: 0.04, roughness: 0.85 }),
   );
   ownMesh.geometry.rotateX(-Math.PI / 2);
   ownMesh.geometry.translate(0, ownBase, 0);
@@ -421,6 +326,14 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const roadPositions: number[] = [];
   const roadColors: number[] = [];
   const roadIndex: number[] = [];
+  const sidewalkPositions: number[] = [], markingPositions: number[] = [], markingColors: number[] = [];
+  const ribbon = (target: number[], ax: number, az: number, bx: number, bz: number, offset: number, width: number, lift: number) => {
+    const len = Math.hypot(bx-ax,bz-az); if (!len) return;
+    const nx=(bz-az)/len,nz=-(bx-ax)/len;
+    const vertices = [[ax+nx*(offset-width/2),az+nz*(offset-width/2)],[ax+nx*(offset+width/2),az+nz*(offset+width/2)],
+      [bx+nx*(offset-width/2),bz+nz*(offset-width/2)],[bx+nx*(offset+width/2),bz+nz*(offset+width/2)]];
+    for (const i of [0,1,2,1,3,2]) {const [x,z]=vertices[i]; target.push(x,heightAt(x,z)+lift,z);}
+  };
   for (const { line, width } of streets) {
     const points = line.map(([lat, lng]) => toLocal(lat, lng));
     if (!points.some(([x, z]) => Math.hypot(x, z) < STREET_RANGE_M)) continue;
@@ -434,6 +347,22 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
       // 지형을 따라가도록 구간을 잘게 나눠 도로 띠를 만든다.
       const [nx, nz] = [((bz - az) / length) * (width / 2), (-(bx - ax) / length) * (width / 2)];
       const steps = Math.max(1, Math.ceil(length / ROAD_STEP_M));
+      for (let step=0;step<steps;step++) {
+        const x0=ax+(bx-ax)*step/steps,z0=az+(bz-az)*step/steps;
+        const x1=ax+(bx-ax)*(step+1)/steps,z1=az+(bz-az)*(step+1)/steps;
+        if (width >= 7) {
+          for (const side of [-1,1]) ribbon(sidewalkPositions,x0,z0,x1,z1,side*(width/2+0.65),1.3,ROAD_LIFT_M+0.08);
+          const paint = (offset: number, tint: number) => {
+            const before=markingPositions.length;
+            ribbon(markingPositions,x0,z0,x1,z1,offset,0.13,ROAD_LIFT_M+0.035);
+            const color=new THREE.Color(tint);
+            for(let v=before;v<markingPositions.length;v+=3) markingColors.push(color.r,color.g,color.b);
+          };
+          for (const side of [-1,1]) paint(side*(width/2-0.35),0xd4d1bd);
+          if(width >= 10) {paint(-0.14,0xc9ad60);paint(0.14,0xc9ad60);}
+          else if(step%2===0) paint(0,0xc9ad60);
+        }
+      }
       for (let step = i === 1 ? 0 : 1; step <= steps; step++) {
         const [x, z] = [ax + ((bx - ax) * step) / steps, az + ((bz - az) * step) / steps];
         const at = roadPositions.length / 3;
@@ -457,15 +386,37 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   road.setAttribute("position", new THREE.Float32BufferAttribute(roadPositions, 3));
   road.setAttribute("color", new THREE.Float32BufferAttribute(roadColors, 3));
   road.setIndex(roadIndex);
+  const roadUV = new Float32Array(roadPositions.length / 3 * 2);
+  for(let v=0;v<roadPositions.length/3;v++) {roadUV[v*2]=roadPositions[v*3];roadUV[v*2+1]=roadPositions[v*3+2];}
+  road.setAttribute("uv",new THREE.BufferAttribute(roadUV,2));
   road.computeVertexNormals();
-  const roadMesh = new THREE.Mesh(road, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  const roadMaterial=surfaceMaterial("road");
+  roadMaterial.polygonOffset=true;roadMaterial.polygonOffsetFactor=-4;roadMaterial.polygonOffsetUnits=-4;
+  const roadMesh = new THREE.Mesh(road, roadMaterial);
   roadMesh.receiveShadow = true;
   scene.add(roadMesh);
+  const addStreetSurface=(positions:number[],material:THREE.Material,colors?:number[])=>{
+    const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));
+    if(colors)g.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
+    g.computeVertexNormals();const m=new THREE.Mesh(g,material);m.receiveShadow=true;scene.add(m);
+  };
+  addStreetSurface(sidewalkPositions,new THREE.MeshStandardMaterial({color:0xb7b2a4,roughness:0.98,side:THREE.DoubleSide}));
+  addStreetSurface(markingPositions,new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95,side:THREE.DoubleSide} ),markingColors);
   lanes.sort((a, b) => a.distance - b.distance);
   const dummy = new THREE.Object3D();
   const spread = <T,>(max: number, make: (lane: (typeof lanes)[number], i: number) => T) =>
     lanes.length ? Array.from({ length: max }, (_, i) => make(lanes[Math.floor(random() ** 1.6 * lanes.length)], i)) : [];
-  const cars = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 1.4, 4.4), new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.4 }), MAX_CARS);
+  const carParts = [
+    {size:[1.8,0.65,4.4],at:[0,-0.25,0],color:0xffffff},
+    {size:[1.52,0.65,2.35],at:[0,0.35,-0.18],color:0x697d80},
+    ...[-0.87,0.87].flatMap(x=>[-1.35,1.35].map(z=>({size:[0.18,0.55,0.62],at:[x,-0.45,z],color:0x242725}))),
+  ].map(({size,at,color})=>{
+    const g=new THREE.BoxGeometry(size[0],size[1],size[2]).toNonIndexed();g.translate(at[0],at[1],at[2]);
+    const c=new THREE.Color(color),colors=new Float32Array(g.getAttribute("position").count*3);
+    for(let v=0;v<colors.length;v+=3)c.toArray(colors,v);g.setAttribute("color",new THREE.BufferAttribute(colors,3));return g;
+  });
+  const carGeometry=mergeGeometries(carParts);for(const part of carParts)part.dispose();
+  const cars = new THREE.InstancedMesh(carGeometry, new THREE.MeshStandardMaterial({ vertexColors:true,roughness: 0.48, metalness: 0.25 }), MAX_CARS);
   spread(MAX_CARS, (lane, i) => {
     const side = random() < 0.5 ? -3 : 3;
     dummy.position.set(lane.x + Math.cos(lane.angle) * side, lane.y + 0.9, lane.z - Math.sin(lane.angle) * side);
@@ -484,17 +435,23 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
     dummy.updateMatrix();
     people.setMatrixAt(i, dummy.matrix);
   });
-  people.castShadow = true;
-  const signMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide });
-  const signs = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.2, 1.1), signMaterial, MAX_SIGNS);
-  spread(MAX_SIGNS, (lane, i) => {
-    const side = (random() < 0.5 ? -1 : 1) * 12;
-    dummy.position.set(lane.x + Math.cos(lane.angle) * side, lane.y + 3.2 + random() * 5, lane.z - Math.sin(lane.angle) * side);
-    dummy.rotation.set(0, lane.angle, 0);
-    dummy.updateMatrix();
-    signs.setMatrixAt(i, dummy.matrix);
-    signs.setColorAt(i, new THREE.Color(SIGN_COLORS[Math.floor(random() * SIGN_COLORS.length)]));
-  });
+  // Subpixel pedestrian shadows cost a second instance pass with little benefit.
+  people.castShadow = false;
+  // Representative Korean storefronts sit on road-facing walls, never float over a lane.
+  const signMaterial = storefrontMaterial();
+  const signParts: THREE.BufferGeometry[] = [];
+  for (const front of frontages) {
+    if(signParts.length >= MAX_SIGNS) break;
+    const near = lanes.reduce((best,lane)=>Math.min(best,Math.hypot(lane.x-front.x,lane.z-front.z)),Infinity);
+    if(near>14 || random()>0.55) continue;
+    const g=new THREE.PlaneGeometry(front.width,0.85).toNonIndexed();
+    const uv=g.getAttribute("uv"),row=Math.floor(random()*STOREFRONT_ROWS);
+    for(let v=0;v<uv.count;v++)uv.setY(v,(uv.getY(v)+row)/STOREFRONT_ROWS);
+    g.rotateY(front.angle);g.translate(front.x,front.y,front.z);signParts.push(g);
+  }
+  const signGeometry=signParts.length?mergeGeometries(signParts):new THREE.BufferGeometry();
+  for(const part of signParts)part.dispose();
+  const signs=new THREE.Mesh(signGeometry,signMaterial);
   const lampPositions: number[] = [];
   lanes.filter((_, i) => i % 3 === 0).slice(0, MAX_LAMPS).forEach((lane) => {
     lampPositions.push(lane.x + Math.cos(lane.angle) * 8, lane.y + 8, lane.z - Math.sin(lane.angle) * 8);
@@ -511,50 +468,51 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
     for (let z = -RANGE_M; z <= RANGE_M; z += TREE_STEP_M) {
       const [tx, tz] = [x + random() * TREE_STEP_M, z + random() * TREE_STEP_M];
       const cover = coverAt(home.lat - tz / metersPerLat, home.lng + tx / metersPerLng);
-      if (Math.hypot(tx, tz) > RANGE_M || random() > (TREE_CHANCE[cover] ?? 0) || insideRing(tx, tz, ownRing)) continue;
+      if (Math.hypot(tx, tz) > RANGE_M || random() > (TREE_CHANCE[cover] ?? 0)) continue;
+      if(treeExclusions.get(`${Math.floor(tx/24)}/${Math.floor(tz/24)}`)?.some(ring=>insideRing(tx,tz,ring))) continue;
       treeSpots.push({ x: tx, y: heightAt(tx, tz), z: tz, size: 0.8 + random() * 0.7 });
     }
   }
   // 줄기와 둥근 수관으로 나눠 활엽수처럼 보이게 하고, 그루마다 크기·기울기·색을 조금씩 다르게 한다.
   const count = Math.min(treeSpots.length, MAX_TREES);
-  const canopyGeometry = new THREE.IcosahedronGeometry(3.2, 1);
-  canopyGeometry.scale(1, 1.15, 1);
-  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.32, TREE_HEIGHT_M * 0.45, 5), new THREE.MeshStandardMaterial({ color: 0x5b4636, roughness: 0.95 }), count);
-  // 잎은 빛이 조금 비쳐 그늘에서도 너무 검게 떨어지지 않게 한다.
-  const trees = new THREE.InstancedMesh(canopyGeometry, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true, emissive: 0x1d2a14, emissiveIntensity: 1 }), count);
-  const leaf = new THREE.Color();
-  treeSpots.slice(0, MAX_TREES).forEach((tree, i) => {
-    dummy.position.set(tree.x, tree.y + TREE_HEIGHT_M * 0.22 * tree.size, tree.z);
-    dummy.rotation.set(0, 0, 0);
-    dummy.scale.setScalar(tree.size);
-    dummy.updateMatrix();
-    trunks.setMatrixAt(i, dummy.matrix);
-    dummy.position.set(tree.x, tree.y + TREE_HEIGHT_M * 0.62 * tree.size, tree.z);
-    dummy.rotation.set((random() - 0.5) * 0.3, random() * Math.PI, (random() - 0.5) * 0.3);
-    dummy.scale.set(tree.size * (0.85 + random() * 0.3), tree.size * (0.85 + random() * 0.35), tree.size * (0.85 + random() * 0.3));
-    dummy.updateMatrix();
-    trees.setMatrixAt(i, dummy.matrix);
-    leaf.set(TREE_COLORS[i % TREE_COLORS.length]).offsetHSL((random() - 0.5) * 0.03, 0, (random() - 0.5) * 0.08);
-    trees.setColorAt(i, leaf);
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18,0.3,TREE_HEIGHT_M*0.45,5),new THREE.MeshStandardMaterial({color:0x665746,roughness:0.98}),count);
+  const leafMaterial=foliageMaterial();
+  const nearTrees=treeSpots.slice(0,MAX_TREES).filter(t=>Math.hypot(t.x,t.z)<180);
+  const farTrees=treeSpots.slice(0,MAX_TREES).filter(t=>Math.hypot(t.x,t.z)>=180);
+  const crown=(detail:boolean)=>{
+    if(!detail) {const g=new THREE.IcosahedronGeometry(3.2,1);g.scale(1,1.12,1);return g;}
+    const parts=[[-1.2,0,0,0.83],[1.2,0.35,0.25,0.78],[0,1.65,-0.35,0.8]].map(([x,y,z,scale])=>{
+      const g=new THREE.SphereGeometry(2.8,8,6).toNonIndexed();g.scale(scale,scale*1.13,scale);g.translate(x,y,z);return g;
+    });
+    const g=mergeGeometries(parts);for(const part of parts)part.dispose();return g;
+  };
+  const nearCanopies=new THREE.InstancedMesh(crown(true),leafMaterial,nearTrees.length);
+  const farCanopies=new THREE.InstancedMesh(crown(false),leafMaterial,farTrees.length);
+  const leaf=new THREE.Color();
+  treeSpots.slice(0,MAX_TREES).forEach((tree,i)=>{
+    dummy.position.set(tree.x,tree.y+TREE_HEIGHT_M*0.22*tree.size,tree.z);
+    dummy.rotation.set(0,0,0);dummy.scale.setScalar(tree.size);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
   });
-  trunks.castShadow = trees.castShadow = true;
-  trees.receiveShadow = true;
-  scene.add(trunks, trees);
-
-  const composer = new EffectComposer(renderer);
-  const renderPass = new RenderPass(scene, windowCamera);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.6, 0.85);
-  // 건물이 땅·이웃 벽과 만나는 곳에 접촉 그늘을 넣어 입체감을 살린다(장면은 미터 단위).
-  const ao = new GTAOPass(scene, windowCamera, 512, 512);
-  ao.updateGtaoMaterial({ radius: 6, distanceExponent: 1.2, thickness: 3, scale: 1.1 });
-  ao.blendIntensity = 0.9;
-  composer.addPass(renderPass);
-  composer.addPass(ao);
-  composer.addPass(bloom);
-  composer.addPass(new OutputPass());
+  for(const [mesh,list] of [[nearCanopies,nearTrees],[farCanopies,farTrees]] as const) {
+    list.forEach((tree,i)=>{
+      dummy.position.set(tree.x,tree.y+TREE_HEIGHT_M*0.56*tree.size,tree.z);
+      dummy.rotation.set((random()-0.5)*0.15,random()*Math.PI,(random()-0.5)*0.15);
+      dummy.scale.set(tree.size*(0.85+random()*0.25),tree.size,tree.size*(0.85+random()*0.25));
+      dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);
+      leaf.set(TREE_COLORS[i%TREE_COLORS.length]).offsetHSL((random()-0.5)*0.035,0,(random()-0.5)*0.06);mesh.setColorAt(i,leaf);
+    });
+    mesh.castShadow=mesh.receiveShadow=true;
+  }
+  scene.add(trunks,nearCanopies,farCanopies);
 
   let mode: ViewMode = "window";
   let state: { date: string; minute: number; conditions: Conditions } = { date: DATES[0].id, minute: 720, conditions: { light: 0, sound: 0, crowd: 0 } };
+  let frame = 0;
+  let disposed = false;
+  let renderCount = 0;
+  let playing = false;
+  let shadowKey = "";
+  let shadowUpdates = 0;
   let facing = 180;
   let eye = new THREE.Vector3(0, 8, 0);
   let view = { yaw: 0, pitch: 0 };
@@ -578,8 +536,6 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
   const setMode = (next: ViewMode) => {
     mode = next;
     controls.enabled = next !== "window";
-    renderPass.camera = next === "window" ? windowCamera : orbitCamera;
-    ao.camera = renderPass.camera;
     if (next === "top") orbitCamera.position.set(0, 620, 1);
     if (next === "orbit") orbitCamera.position.set(-170, 150, 240);
     controls.enableRotate = next === "orbit";
@@ -590,11 +546,12 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
 
   const resize = () => {
     const { clientWidth, clientHeight } = canvas;
+    if (!clientWidth || !clientHeight) return;
+    const ratio = renderer.getPixelRatio();
+    if (canvas.width === Math.floor(clientWidth * ratio) && canvas.height === Math.floor(clientHeight * ratio)) return;
     renderer.setSize(clientWidth, clientHeight, false);
-    composer.setPixelRatio(renderer.getPixelRatio());
-    composer.setSize(clientWidth, clientHeight);
     for (const camera of [orbitCamera, windowCamera]) {
-      camera.aspect = clientWidth / clientHeight;
+      camera.aspect = camera.view?.enabled ? camera.view.fullWidth / camera.view.fullHeight : clientWidth / clientHeight;
       camera.updateProjectionMatrix();
     }
   };
@@ -602,6 +559,15 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
 
   function render(date: string, minute: number, conditions: Conditions) {
     state = { date, minute, conditions };
+    if (!frame && !disposed) frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (!disposed) drawFrame();
+    });
+  }
+
+  function drawFrame() {
+    const started = performance.now();
+    const { date, minute, conditions } = state;
     const { altitude, azimuth } = sunAt(date, minute, home.lat, home.lng);
     const [alt, az] = [(altitude * Math.PI) / 180, (azimuth * Math.PI) / 180];
     const direction = new THREE.Vector3(Math.sin(az) * Math.cos(alt), Math.sin(alt), -Math.cos(az) * Math.cos(alt));
@@ -618,41 +584,78 @@ function buildScene(canvas: HTMLCanvasElement, home: Home, buildings: Building[]
     scene.background = nightSky;
     (scene.fog as THREE.FogExp2).color.copy(new THREE.Color(0xc9d6df).lerp(new THREE.Color(0xf2c9a0), golden).lerp(nightSky, 1 - dayness));
     sun.position.copy(direction).multiplyScalar(1000);
+    sun.castShadow = altitude > 0;
     sun.intensity = 3.4 * ramp(altitude, -1, 10);
     sun.color.set(0xfff2e0).lerp(new THREE.Color(0xffb06a), golden);
     // 밤에는 푸른 달빛 정도만 남겨 건물 윤곽이 보이게 한다.
     ambient.color.set(0x5a6f96).lerp(new THREE.Color(0xdbe8f6), dayness);
     ambient.intensity = 1.6 - dayness * 0.3;
-    ao.blendIntensity = 0.35 + dayness * 0.55;
 
     // 빛공해가 클수록 창문, 간판, 가로등이 밝고 많아진다.
     for (const material of materials) material.emissiveIntensity = dark * (0.35 + glow * 1.1);
-    signMaterial.opacity = dark * 0.95;
-    signs.count = Math.round(MAX_SIGNS * glow);
+    signMaterial.emissiveIntensity = dark * (0.3 + glow * 0.9);
     lampMaterial.opacity = dark * (0.35 + glow * 0.65);
-    bloom.strength = 0.02 + dark * (0.12 + glow * 0.3);
     // 소음은 차량 수로, 혼잡은 보행자 수로 보여 준다.
     cars.count = Math.round(MAX_CARS * (conditions.sound / 100));
     people.count = Math.round(MAX_PEOPLE * (conditions.crowd / 100));
-    composer.render();
+    // Camera movement and floor changes do not move the light or its casters.
+    // Reuse that shadow map; only time, visibility or caster-count changes dirty it.
+    const nextShadowKey = `${date}/${minute}/${mode === "window"}/${cars.count}`;
+    if (nextShadowKey !== shadowKey) {
+      renderer.shadowMap.needsUpdate = true;
+      shadowKey = nextShadowKey;
+      if (sun.castShadow) shadowUpdates++;
+    }
+    renderer.render(scene, mode === "window" ? windowCamera : orbitCamera);
+    canvas.dataset.sceneRenders = String(++renderCount);
+    canvas.dataset.sceneRenderMs = (performance.now() - started).toFixed(2);
+    canvas.dataset.sceneTriangles = String(renderer.info.render.triangles);
+    canvas.dataset.sceneShadowUpdates = String(shadowUpdates);
+    canvas.dataset.sceneShadowSize = String(sun.shadow.mapSize.x);
   }
 
+  canvas.dataset.sceneBuildMs = (performance.now() - buildStarted).toFixed(2);
   return {
     render,
     setMode,
     setEye,
+    setPlayback: (active) => {
+      if (playing === active) return;
+      playing = active;
+      const size = active ? 1024 : 2048;
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+      sun.shadow.mapSize.set(size, size);
+      shadowKey = "";
+      render(state.date, state.minute, state.conditions);
+    },
     look: (yaw, pitch) => {
       view = { yaw, pitch };
       aim();
       render(state.date, state.minute, state.conditions);
     },
     resize,
+    setWindowViewport: (view) => {
+      if (view) windowCamera.setViewOffset(view.fullWidth, view.fullHeight, view.x, view.y, view.width, view.height);
+      else windowCamera.clearViewOffset();
+    },
     dispose: () => {
+      disposed = true;
+      cancelAnimationFrame(frame);
       controls.dispose();
+      const shared = new Set(facadeCache.values());
       scene.traverse((item) => {
-        if (item instanceof THREE.Mesh) item.geometry.dispose();
+        if (item instanceof THREE.Mesh || item instanceof THREE.LineSegments || item instanceof THREE.Points) {
+          item.geometry.dispose();
+          for (const material of Array.isArray(item.material) ? item.material : [item.material]) {
+            if (!shared.has(material as THREE.MeshStandardMaterial)) {
+              const m = material as THREE.MeshStandardMaterial;
+              for (const map of [m.map,m.bumpMap,m.normalMap,m.emissiveMap]) map?.dispose();
+              material.dispose();
+            }
+          }
+        }
       });
-      composer.dispose();
       renderer.dispose();
     },
   };
@@ -665,6 +668,7 @@ export default function DayView({
   maxFloor,
   buildings,
   streets,
+  noiseBySlot,
   onInput,
   onClose,
 }: {
@@ -674,37 +678,57 @@ export default function DayView({
   maxFloor: number;
   buildings: Building[] | null;
   streets: Street[];
+  noiseBySlot: Record<Slot, number | null>;
   onInput: (next: HomeInput) => void;
   onClose: () => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const scene = useRef<Scene | null>(null);
   const [mode, setMode] = useState<ViewMode>("window");
+  const viewMode = useRef(mode);
+  viewMode.current = mode;
   const [date, setDate] = useState(DATES[0].id);
   const [minute, setMinute] = useState(720);
   const [playing, setPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState<0.25 | 0.5 | 1>(0.5);
+  const playbackClock = useRef<{ minute: number; start: number; rate: number } | null>(null);
   const [listening, setListening] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const sound = useRef<ReturnType<typeof startSoundscape> | null>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
   const around = useRef<Promise<Surroundings> | null>(null);
   const wantSound = useRef(false);
   const room = useRef<HTMLDivElement>(null);
   const header = useRef<HTMLElement>(null);
   const panel = useRef<HTMLElement>(null);
+  const windowViewport = useRef<WindowViewport | null>(null);
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
   const look = useRef({ yaw: 0, pitch: 0 });
   const report = useMemo(() => (buildings ? sunReport(home, input, buildings, date) : null), [home, input, buildings, date]);
+  const windowField = useMemo(() => buildings ? windowFor(home, buildings) : null, [home, buildings]);
+  const floorNoise = useMemo(() => prepareFloorNoise(home, streets, groundAt), [home, streets]);
   const { altitude, azimuth } = sunAt(date, minute, home.lat, home.lng);
   const hour = Math.floor(minute / 60);
   const slot = slotOf(hour);
-  const lit = report?.winter.slots[Math.floor(minute / STEP_MINUTES)] ?? false;
+  const sunlight = useMemo(() => windowField?.sample(input, altitude, azimuth) ?? null, [windowField, input, altitude, azimuth]);
+  const sampleRoomLight = useMemo(() => (visualMinute: number) => {
+    if (!windowField) return null;
+    const sun = sunAt(date, visualMinute, home.lat, home.lng);
+    return windowField.sample(input, sun.altitude, sun.azimuth);
+  }, [windowField, date, home.lat, home.lng, input]);
+  const lit = Boolean(sunlight?.visibility);
+  const noise = floorNoise(noiseBySlot[slot], input.floor);
   const dayness = ramp(altitude, -7, 6);
-  const noon = ramp(altitude, 8, 28);
-  const golden = dayness * (1 - noon);
   const facing = DIRECTIONS.find((d) => d.id === input.direction)!;
   const offset = ((azimuth - facing.degree + 540) % 360) - 180;
+  // Occlusion affects the sunlight layer, not the exposure of the entire photo.
+  const roomBrightness = 0.82;
   const conditions = { light: slot === "day" ? 0 : cell.burdens[slot].light, sound: cell.burdens[slot].sound, crowd: cell.burdens[slot].crowd };
   const latest = useRef({ date, minute, conditions });
   latest.current = { date, minute, conditions };
+  const soundState = useRef({ minute, date, db: noise.db ?? 0, referenceDb: noiseBySlot[slot] ?? 0, floor: input.floor });
+  soundState.current = { minute, date, db: noise.db ?? 0, referenceDb: noiseBySlot[slot] ?? 0, floor: input.floor };
 
   // 세로 화면에서는 사진을 유리창 중심의 16:9로 잘라 머리글과 조작판 사이 가운데에 놓는다.
   const fitRoom = () => {
@@ -735,7 +759,7 @@ export default function DayView({
     const frame = room.current?.getBoundingClientRect();
     if (!target) return;
     const { glass } = PHOTO;
-    const box = mode === "window" && frame
+    const full = viewMode.current === "window" && frame
       ? {
           left: frame.left + (glass.x / PHOTO.width) * frame.width,
           top: frame.top + (glass.y / PHOTO.height) * frame.height,
@@ -743,10 +767,23 @@ export default function DayView({
           height: (glass.height / PHOTO.height) * frame.height,
         }
       : { left: 0, top: 0, width: window.innerWidth, height: bottom ?? window.innerHeight };
+    // A cover-sized photo can extend well beyond a phone's width. Render just
+    // the visible slice while keeping the original camera projection aligned.
+    // On portrait screens the room sits between the header and the info panel (fitRoom's bottom).
+    const left = Math.max(0, full.left), top = Math.max(0, full.top);
+    const box = {
+      left, top,
+      width: Math.max(1, Math.min(window.innerWidth, full.left + full.width) - left),
+      height: Math.max(1, Math.min(bottom ?? window.innerHeight, full.top + full.height) - top),
+    };
+    windowViewport.current = viewMode.current === "window" ? {
+      fullWidth: full.width, fullHeight: full.height, x: left - full.left, y: top - full.top, width: box.width, height: box.height,
+    } : null;
     target.style.left = `${box.left}px`;
     target.style.top = `${box.top}px`;
     target.style.width = `${box.width}px`;
     target.style.height = `${box.height}px`;
+    scene.current?.setWindowViewport(windowViewport.current);
   };
 
   useEffect(() => {
@@ -754,6 +791,7 @@ export default function DayView({
     fitCanvas();
     const built = buildScene(canvas.current, home, buildings, streets);
     scene.current = built;
+    built.setWindowViewport(windowViewport.current);
     const refresh = () => {
       fitCanvas();
       built.resize();
@@ -761,11 +799,17 @@ export default function DayView({
     };
     const observer = new ResizeObserver(refresh);
     observer.observe(document.documentElement);
+    if (room.current) observer.observe(room.current);
+    window.addEventListener("resize", refresh);
+    window.visualViewport?.addEventListener("resize", refresh);
     built.setEye(input);
     built.setMode(mode);
+    built.setPlayback(playing);
     refresh();
     return () => {
       observer.disconnect();
+      window.removeEventListener("resize", refresh);
+      window.visualViewport?.removeEventListener("resize", refresh);
       built.dispose();
       scene.current = null;
     };
@@ -786,18 +830,37 @@ export default function DayView({
   }, [date, minute, slot]);
 
   useEffect(() => {
-    if (!playing) return;
-    const timer = window.setInterval(() => setMinute((value) => (value + STEP_MINUTES) % 1440), PLAY_INTERVAL_MS);
+    scene.current?.setPlayback(playing);
+    if (!playing) { playbackClock.current = null; return; }
+    const now = performance.now();
+    const before = playbackClock.current;
+    const at = before ? before.minute + (now - before.start) * STEP_MINUTES / PLAY_INTERVAL_MS * before.rate : latest.current.minute;
+    const clock = { minute: at, start: now, rate: playbackRate };
+    playbackClock.current = clock;
+    // Preserve the fractional position when changing speed; never jump back to
+    // the last ten-minute label or accumulate interval scheduling drift.
+    const timer = window.setInterval(() => {
+      const visual = clock.minute + (performance.now() - clock.start) * STEP_MINUTES / PLAY_INTERVAL_MS * clock.rate;
+      setMinute(Math.floor(((visual % 1440) + 1440) % 1440 / STEP_MINUTES) * STEP_MINUTES);
+    }, PLAY_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [playing]);
+  }, [playing, playbackRate]);
 
   // 소리는 시각·날짜·층에 따라 층별 크기가 바뀌고, 전체 크기는 그 시간대 소음 dB를 따른다.
   useEffect(() => {
-    sound.current?.update({ minute, date, db: cell.noiseDb[slot], floor: input.floor });
-  }, [minute, date, slot, input.floor, listening]);
+    if (noise.db === null) {
+      wantSound.current = false;
+      sound.current?.stop();
+      sound.current = null;
+      setListening(false);
+      return;
+    }
+    sound.current?.update(soundState.current);
+  }, [minute, date, slot, input.floor, noise.db, listening]);
 
   useEffect(
     () => () => {
+      wantSound.current = false;
       sound.current?.stop();
     },
     [],
@@ -818,13 +881,13 @@ export default function DayView({
     around.current.then((env) => {
       if (sound.current || !wantSound.current) return;
       sound.current = startSoundscape(env);
-      sound.current.update({ minute, date, db: cell.noiseDb[slot], floor: input.floor });
+      sound.current.update(soundState.current);
     });
   };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close.current();
     };
     document.documentElement.classList.add("locked");
     window.addEventListener("keydown", onKey);
@@ -832,7 +895,7 @@ export default function DayView({
       document.documentElement.classList.remove("locked");
       window.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, []);
 
   const clock = `${String(hour).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
   return (
@@ -840,7 +903,7 @@ export default function DayView({
       <div className={`dv-stage ${mode === "window" ? "" : "hidden"}`}>
         <div className="room-bg" aria-hidden="true">
           <img src="/room/night.webp" alt="" />
-          <img src="/room/day.webp" alt="" style={{ opacity: dayness }} />
+          <img src="/room/day.webp" alt="" style={{ opacity: dayness, filter: `brightness(${roomBrightness})` }} />
         </div>
       </div>
       <canvas
@@ -865,15 +928,8 @@ export default function DayView({
       />
       <div ref={room} className={`room ${mode === "window" ? "" : "hidden"}`}>
         <img src="/room/night.webp" alt="" />
-        <img src="/room/day.webp" alt="" style={{ opacity: dayness, filter: `brightness(${0.9 + noon * 0.3})` }} />
-        {lit && (
-          <img
-            src="/room/sun.webp"
-            alt=""
-            className="sun-patch"
-            style={{ opacity: ramp(altitude, 0, 8), transform: `translateX(${clamp(offset / 90, -1, 1) * -5}%)` }}
-          />
-        )}
+        <img src="/room/day.webp" alt="" style={{ opacity: dayness, filter: `brightness(${roomBrightness}) saturate(0.93)` }} />
+        <RoomSunlight light={sunlight} active={mode === "window"} playing={playing} minute={minute} minutesPerMs={STEP_MINUTES / PLAY_INTERVAL_MS * playbackRate} sampleAt={sampleRoomLight} />
       </div>
 
       <header ref={header} className="dv-top">
@@ -887,26 +943,34 @@ export default function DayView({
         <button className="dv-close" onClick={onClose} aria-label="닫기">×</button>
       </header>
 
-      <aside ref={panel} className="dv-panel">
+      <button className="dv-info-toggle" aria-expanded={panelOpen} aria-controls="dayview-environment" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? "정보 닫기" : "환경 정보"}</button>
+      <aside ref={panel} id="dayview-environment" className={`dv-panel ${panelOpen ? "open" : ""}`}>
         <ModeSwitch label="날짜" options={DATES} value={date} onChange={setDate} />
         <div className="dv-home">
           <FloorInput input={input} maxFloor={maxFloor} onChange={onInput} />
           <DirectionDial input={input} onChange={onInput} />
         </div>
-        <button className={`dv-sound ${listening ? "on" : ""}`} onClick={toggleSound}>{listening ? "소리 끄기" : "이 시간 소리 듣기"}</button>
+        <button className={`dv-sound ${listening ? "on" : ""}`} onClick={toggleSound} disabled={noise.db === null}>{listening ? "소리 끄기" : noise.db === null ? "소음 데이터 없음" : "이 시간 소리 듣기"}</button>
         <dl>
           <div><dt>지형</dt><dd>{terrainSummary(home.lat, home.lng) ?? "계산 중"}</dd></div>
           <div><dt>일조</dt><dd>{report ? formatDuration(report.winter.minutes) : "계산 중"}</dd></div>
-          <div><dt>지금 햇빛</dt><dd>{lit ? "듦" : altitude > 0 ? "가려짐" : "해 없음"}</dd></div>
+          <div><dt>지금 햇빛</dt><dd>{!sunlight ? "계산 중" : lit ? `창 ${Math.round(sunlight.visibility * 100)}%에 듦` : altitude <= 0 ? "해 없음" : Math.abs(offset) >= 90 ? "창 반대편" : "가려짐"}</dd></div>
+          <div><dt>실내 햇빛</dt><dd>{!sunlight ? "계산 중" : !lit ? "직사광 없음" : sunlight.strength > 0.5 ? "강한 직사광" : sunlight.strength > 0.2 ? "부드러운 직사광" : "비스듬한 햇빛"}</dd></div>
           <div><dt>빛공해</dt><dd>{slot === "day" ? "낮 미적용" : level(cell.burdens[slot].light)}</dd></div>
-          <div><dt>소음</dt><dd>약 {cell.noiseDb[slot]}dB · {level(cell.burdens[slot].sound)}</dd></div>
+          <div><dt>{input.floor}층 소음</dt><dd>{noise.db === null ? "데이터 없음" : `약 ${noise.db.toFixed(1)}dB`}</dd></div>
           <div><dt>혼잡</dt><dd>{level(cell.burdens[slot].crowd)}</dd></div>
         </dl>
+        <details className="dv-estimate"><summary>일조·소음 추정 기준</summary><p>햇빛은 시간·창 방향·층 높이와 주변 건물·지형을 반영합니다. 방 크기와 창 크기는 사진에 맞춘 예시입니다. 일조 시간은 선택한 날 08–16시 중 창 일부에 직사광이 드는 시간입니다.</p><p>{noise.roadM === null ? "가까운 도로 정보가 없어 층별 소음 보정은 적용하지 않았습니다." : `가까운 도로 약 ${Math.round(noise.roadM)}m 기준, 1층 대비 ${noise.deltaDb.toFixed(1)}dB 거리 보정. 도로 소음이 주된 소리라는 가정이며 건물 차폐·반사에 따라 실제 고층 소음은 커질 수도 있습니다.`} 창 밖 기준으로, 실내 방음과 창문 개폐는 반영하지 않습니다. 재생 음량은 실제 dB를 재현하지 않습니다.</p><p>건물 윤곽·높이와 지형은 지도 데이터를 사용합니다. 외벽, 옥상 설비, 간판과 수목은 동네 분위기를 표현한 예시이며 실제 외관·상호와 다를 수 있습니다.</p></details>
       </aside>
 
       <footer className="dv-bar">
         <button className="dv-play" onClick={() => setPlaying(!playing)} aria-label={playing ? "멈춤" : "하루 재생"}>{playing ? "❚❚" : "▶"}</button>
         <strong>{clock}</strong>
+        <div className="dv-speed" role="group" aria-label="재생 속도">
+          {([0.25, 0.5, 1] as const).map((rate) => (
+            <button key={rate} className={playbackRate === rate ? "on" : ""} aria-pressed={playbackRate === rate} onClick={() => setPlaybackRate(rate)}>{rate === 1 ? "1.0" : rate}×</button>
+          ))}
+        </div>
         <input
           type="range"
           min={0}

@@ -376,12 +376,20 @@ input::-webkit-calendar-picker-indicator { opacity: 0; }
 .home-controls .day-open { display: none; }
 .day-open { grid-column: 1 / -1; width: 100%; height: 52px; box-shadow: 0 8px 24px rgba(16, 20, 24, 0.22); background: var(--ink); border-radius: 999px; color: #fff; font-size: 15px; font-weight: 700; }
 html.locked { overflow: hidden; }
-.dayview { position: fixed; z-index: 100; inset: 0; overflow: hidden; background: #05070a; color: #fff; }
+.dayview { position: fixed; z-index: 100; inset: 0; overflow: clip; background: #05070a; color: #fff; }
 .room-bg { position: absolute; inset: 0; filter: blur(46px) brightness(0.62); transform: scale(1.15); }
 .room-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.room { position: absolute; z-index: 1; pointer-events: none; top: 50%; left: 50%; width: max(130vw, calc(62dvh * 1672 / 468)); aspect-ratio: 1672 / 468; transform: translate(-50%, -50%); }
+/* 사진 높이를 화면의 약 58%로 두어 위아래를 조금 남긴다(넓은 화면은 좌우가 약간 잘린다). 세로 화면은 화면 폭의 160%까지만 키운다. */
+.room { position: absolute; z-index: 1; pointer-events: none; top: 50%; left: 50%; width: clamp(100vw, calc(58dvh * 1672 / 468), 160vw); aspect-ratio: 1672 / 468; transform: translate(-50%, -50%); }
 .room > img { position: absolute; inset: 0; width: 100%; height: 100%; }
-.sun-patch { mix-blend-mode: screen; transition: opacity 0.4s; }
+.room > img { transition: opacity 0.16s linear; }
+.room-sunlight { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; }
+.dv-estimate { font-size: 11px; color: rgba(255, 255, 255, 0.68); line-height: 1.5; }
+.dv-estimate summary { cursor: pointer; }
+.noise-estimate { margin: 6px 0; color: var(--muted); font-size: 11px; }
+.dv-estimate p { margin: 7px 0 0; }
+.dv-sound:disabled { opacity: 0.5; cursor: default; }
+.dv-panel { max-height: calc(100dvh / var(--ui) - 170px); overflow-y: auto; }
 .dv-stage { position: absolute; inset: 0; }
 .dv-canvas { position: absolute; background: #0b1018; cursor: grab; }
 .dv-stage.hidden, .room.hidden { visibility: hidden; }
@@ -393,6 +401,7 @@ html.locked { overflow: hidden; }
 .dayview .mode-switch button.on { background: #fff; color: #101418; }
 .dv-sound { padding: 8px 0; background: rgba(255, 255, 255, 0.12); border-radius: 10px; color: #fff; font-size: 13px; font-weight: 600; }
 .dv-sound.on { background: #fff; color: #101418; }
+.dv-info-toggle { display: none; }
 .dv-panel { position: absolute; z-index: 2; top: 62px; right: 14px; display: grid; gap: 12px; width: 236px; padding: 12px; background: rgba(8, 10, 14, 0.5); border-radius: 18px; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .dv-panel .mode-switch { background: rgba(255, 255, 255, 0.1); }
 .dv-home { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -407,10 +416,13 @@ html.locked { overflow: hidden; }
 .dv-panel dt { flex: none; color: rgba(255, 255, 255, 0.7); }
 .dv-panel dd { text-align: right; }
 .dv-panel dd { margin: 0; font-weight: 600; }
-.dv-bar { position: absolute; z-index: 2; bottom: 16px; left: 50%; display: flex; align-items: center; gap: 12px; width: min(780px, calc(100vw - 24px)); padding: 8px 12px; background: rgba(8, 10, 14, 0.5); border-radius: 999px; font-size: 13px; transform: translateX(-50%); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.dv-bar { position: absolute; z-index: 2; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; display: flex; align-items: center; gap: 12px; width: min(900px, calc(100vw / var(--ui) - 24px)); padding: 8px 12px; background: rgba(8, 10, 14, 0.5); border-radius: 999px; font-size: 13px; transform: translateX(-50%); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .dv-bar strong { font-size: 17px; font-variant-numeric: tabular-nums; }
 .dv-bar input { flex: 1; min-width: 60px; accent-color: #fff; }
 .dv-play { flex: none; width: 32px; height: 32px; background: #fff; border-radius: 50%; color: #101418; font-size: 12px; }
+.dv-speed { display: flex; flex: none; gap: 2px; padding: 3px; background: rgba(255, 255, 255, 0.08); border-radius: 999px; }
+.dv-speed button { padding: 5px 8px; border-radius: 999px; color: rgba(255, 255, 255, 0.7); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dv-speed button.on { background: #fff; color: #101418; }
 .dv-times { display: flex; gap: 2px; }
 .dv-times button { padding: 6px 9px; border-radius: 999px; color: rgba(255, 255, 255, 0.8); font-size: 12px; font-weight: 600; }
 .dv-times button.on { background: #fff; color: #101418; }
@@ -641,4 +653,27 @@ html.locked { overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
+}
+
+/* The room fills the viewport; compact controls leave the window in view. */
+@media (max-width: 760px), (max-aspect-ratio: 3/4) {
+  .dayview { --ui: 1; }
+  .dayview .dv-top, .dayview .dv-panel, .dayview .dv-bar { zoom: 1; }
+  .dv-top { top: max(12px, env(safe-area-inset-top)); right: 12px; left: 12px; flex-wrap: wrap; gap: 8px; }
+  .dv-top p { order: 0; font-size: 12px; }
+  .dv-top .dv-close { order: 1; width: 36px; height: 36px; }
+  .dv-top > .mode-switch { order: 2; flex-basis: 100%; justify-content: center; }
+  .dayview .dv-top .mode-switch button { flex: 1; min-height: 36px; padding: 7px 10px; font-size: 12px; }
+  .dv-info-toggle { position: absolute; z-index: 3; display: block; top: calc(max(12px, env(safe-area-inset-top)) + 88px); right: 12px; min-height: 36px; padding: 8px 13px; border-radius: 999px; background: rgba(8, 10, 14, 0.72); color: #fff; font-size: 12px; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  .dayview .dv-panel { display: none; top: calc(max(12px, env(safe-area-inset-top)) + 132px); right: 12px; bottom: auto; left: 12px; width: auto; max-height: calc(100dvh - 310px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); grid-template-columns: 1fr; gap: 10px; padding: 12px; }
+  .dayview .dv-panel.open { display: grid; }
+  .dv-panel dl { grid-template-columns: repeat(2, minmax(0, 1fr)); font-size: 12px; }
+  .dv-bar { display: grid; grid-template-columns: 40px 52px minmax(0, 1fr); gap: 8px; width: calc(100vw - 24px); bottom: max(12px, env(safe-area-inset-bottom)); padding: 10px; border-radius: 20px; }
+  .dv-play { width: 40px; height: 40px; }
+  .dv-bar strong { font-size: 16px; }
+  .dv-speed { justify-self: end; }
+  .dv-speed button { min-height: 34px; padding: 5px 8px; }
+  .dv-bar input { order: initial; grid-column: 1 / -1; width: 100%; min-height: 20px; margin: 0; }
+  .dv-times { grid-column: 1 / -1; justify-content: space-between; width: 100%; margin: 0; }
+  .dv-times button { min-height: 32px; padding: 5px 8px; }
 }

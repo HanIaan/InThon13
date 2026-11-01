@@ -119,6 +119,7 @@ export function NoiseCard({
   score,
   sensor,
   daylight,
+  estimateNote,
 }: {
   isDay: boolean;
   noise: number | null;
@@ -126,6 +127,7 @@ export function NoiseCard({
   score: number | null;
   sensor: SensorCard | null;
   daylight: { sunrise: number; sunset: number };
+  estimateNote?: string;
 }) {
   const isDayHour = (hour: number) => hour >= Math.floor(daylight.sunrise) && hour < Math.ceil(daylight.sunset);
   const hours = sensor && noiseHours(sensor.hourly);
@@ -133,6 +135,7 @@ export function NoiseCard({
     <div className="report-card">
       <h2>소음 점수<b>{score ?? "-"}</b></h2>
       <p className="card-value">{noise === null ? "측정 없음" : `약 ${noise}dB`}<small>{isDay ? "낮" : "심야"} · 혼잡 {crowd}</small></p>
+      {estimateNote && <p className="noise-estimate">{estimateNote}</p>}
       {sensor && (
         <div className="sensor">
           <div className="sensor-chart" role="img" aria-label={`가까운 센서의 24시간 소음, ${CHART_MIN_DB}~${CHART_MAX_DB}dB 눈금`}>
